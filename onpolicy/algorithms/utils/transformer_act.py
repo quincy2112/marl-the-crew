@@ -3,8 +3,17 @@ from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
 
 
-def discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
-                                available_actions=None, deterministic=False):
+def discrete_autoregreesive_act(
+    decoder,
+    obs_rep,
+    obs,
+    batch_size,
+    n_agent,
+    action_dim,
+    tpdv,
+    available_actions=None,
+    deterministic=False,
+):
     shifted_action = torch.zeros((batch_size, n_agent, action_dim + 1)).to(**tpdv)
     shifted_action[:, 0, 0] = 1
     output_action = torch.zeros((batch_size, n_agent, 1), dtype=torch.long)
@@ -26,9 +35,20 @@ def discrete_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, acti
     return output_action, output_action_log
 
 
-def discrete_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agent, action_dim, tpdv,
-                          available_actions=None):
-    one_hot_action = F.one_hot(action.squeeze(-1), num_classes=action_dim)  # (batch, n_agent, action_dim)
+def discrete_parallel_act(
+    decoder,
+    obs_rep,
+    obs,
+    action,
+    batch_size,
+    n_agent,
+    action_dim,
+    tpdv,
+    available_actions=None,
+):
+    one_hot_action = F.one_hot(
+        action.squeeze(-1), num_classes=action_dim
+    )  # (batch, n_agent, action_dim)
     shifted_action = torch.zeros((batch_size, n_agent, action_dim + 1)).to(**tpdv)
     shifted_action[:, 0, 0] = 1
     shifted_action[:, 1:, 1:] = one_hot_action[:, :-1, :]
@@ -42,8 +62,9 @@ def discrete_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agent, ac
     return action_log, entropy
 
 
-def continuous_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv,
-                                  deterministic=False):
+def continuous_autoregreesive_act(
+    decoder, obs_rep, obs, batch_size, n_agent, action_dim, tpdv, deterministic=False
+):
     shifted_action = torch.zeros((batch_size, n_agent, action_dim)).to(**tpdv)
     output_action = torch.zeros((batch_size, n_agent, action_dim), dtype=torch.float32)
     output_action_log = torch.zeros_like(output_action, dtype=torch.float32)
@@ -69,7 +90,9 @@ def continuous_autoregreesive_act(decoder, obs_rep, obs, batch_size, n_agent, ac
     return output_action, output_action_log
 
 
-def continuous_parallel_act(decoder, obs_rep, obs, action, batch_size, n_agent, action_dim, tpdv):
+def continuous_parallel_act(
+    decoder, obs_rep, obs, action, batch_size, n_agent, action_dim, tpdv
+):
     shifted_action = torch.zeros((batch_size, n_agent, action_dim)).to(**tpdv)
     shifted_action[:, 1:, :] = action[:, :-1, :]
 

@@ -6,18 +6,16 @@ from onpolicy.algorithms.utils.popart_hatrpo import PopArt
 from onpolicy.algorithms.utils.util import check
 from onpolicy.utils.valuenorm import ValueNorm
 
-class HAPPO():
+
+class HAPPO:
     """
     Trainer class for HAPPO to update policies.
     :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
     :param policy: (HAPPO_Policy) policy to update.
     :param device: (torch.device) specifies the device to run on (cpu/gpu).
     """
-    def __init__(self,
-                 args,
-                 policy,
-                 device=torch.device("cpu")):
 
+    def __init__(self, args, policy, device=torch.device("cpu")):
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.policy = policy
@@ -28,7 +26,7 @@ class HAPPO():
         self.data_chunk_length = args.data_chunk_length
         self.value_loss_coef = args.value_loss_coef
         self.entropy_coef = args.entropy_coef
-        self.max_grad_norm = args.max_grad_norm       
+        self.max_grad_norm = args.max_grad_norm
         self.huber_delta = args.huber_delta
 
         self._use_recurrent_policy = args.use_recurrent_policy
@@ -44,11 +42,13 @@ class HAPPO():
         if self._use_popart:
             self.value_normalizer = PopArt(1, device=self.device)
         elif self._use_valuenorm:
-            self.value_normalizer = ValueNorm(1, device = self.device)
+            self.value_normalizer = ValueNorm(1, device=self.device)
         else:
             self.value_normalizer = None
 
-    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
+    def cal_value_loss(
+        self, values, value_preds_batch, return_batch, active_masks_batch
+    ):
         """
         Calculate value function loss.
         :param values: (torch.Tensor) value function predictions.
@@ -59,13 +59,17 @@ class HAPPO():
         :return value_loss: (torch.Tensor) value function loss.
         """
         if self._use_popart or self._use_valuenorm:
-            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                        self.clip_param)
-            error_clipped = self.value_normalizer.normalize(return_batch) - value_pred_clipped
+            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(
+                -self.clip_param, self.clip_param
+            )
+            error_clipped = (
+                self.value_normalizer.normalize(return_batch) - value_pred_clipped
+            )
             error_original = self.value_normalizer.normalize(return_batch) - values
         else:
-            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
-                                                                                        self.clip_param)
+            value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(
+                -self.clip_param, self.clip_param
+            )
             error_clipped = return_batch - value_pred_clipped
             error_original = return_batch - values
 
@@ -82,7 +86,9 @@ class HAPPO():
             value_loss = value_loss_original
 
         if self._use_value_active_masks:
-            value_loss = (value_loss * active_masks_batch).sum() / active_masks_batch.sum()
+            value_loss = (
+                value_loss * active_masks_batch
+            ).sum() / active_masks_batch.sum()
         else:
             value_loss = value_loss.mean()
 
@@ -101,44 +107,64 @@ class HAPPO():
         :return actor_grad_norm: (torch.Tensor) gradient norm from actor update.
         :return imp_weights: (torch.Tensor) importance sampling weights.
         """
-        share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
-        value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
-        adv_targ, available_actions_batch, factor_batch = sample
-
-
+        (
+            share_obs_batch,
+            obs_batch,
+            rnn_states_batch,
+            rnn_states_critic_batch,
+            actions_batch,
+            value_preds_batch,
+            return_batch,
+            masks_batch,
+            active_masks_batch,
+            old_action_log_probs_batch,
+            adv_targ,
+            available_actions_batch,
+            factor_batch,
+        ) = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
 
-
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
         return_batch = check(return_batch).to(**self.tpdv)
-
 
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
         factor_batch = check(factor_batch).to(**self.tpdv)
         # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
-                                                                              obs_batch, 
-                                                                              rnn_states_batch, 
-                                                                              rnn_states_critic_batch, 
-                                                                              actions_batch, 
-                                                                              masks_batch, 
-                                                                              available_actions_batch,
-                                                                              active_masks_batch)
+        values, action_log_probs, dist_entropy = self.policy.evaluate_actions(
+            share_obs_batch,
+            obs_batch,
+            rnn_states_batch,
+            rnn_states_critic_batch,
+            actions_batch,
+            masks_batch,
+            available_actions_batch,
+            active_masks_batch,
+        )
         # actor update
-        imp_weights = torch.prod(torch.exp(action_log_probs - old_action_log_probs_batch),dim=-1,keepdim=True)
+        imp_weights = torch.prod(
+            torch.exp(action_log_probs - old_action_log_probs_batch),
+            dim=-1,
+            keepdim=True,
+        )
 
         surr1 = imp_weights * adv_targ
-        surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+        surr2 = (
+            torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param)
+            * adv_targ
+        )
 
         if self._use_policy_active_masks:
-            policy_action_loss = (-torch.sum(factor_batch * torch.min(surr1, surr2),
-                                             dim=-1,
-                                             keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
+            policy_action_loss = (
+                -torch.sum(factor_batch * torch.min(surr1, surr2), dim=-1, keepdim=True)
+                * active_masks_batch
+            ).sum() / active_masks_batch.sum()
         else:
-            policy_action_loss = -torch.sum(factor_batch * torch.min(surr1, surr2), dim=-1, keepdim=True).mean()
+            policy_action_loss = -torch.sum(
+                factor_batch * torch.min(surr1, surr2), dim=-1, keepdim=True
+            ).mean()
 
         policy_loss = policy_action_loss
 
@@ -148,26 +174,39 @@ class HAPPO():
             (policy_loss - dist_entropy * self.entropy_coef).backward()
 
         if self._use_max_grad_norm:
-            actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
+            actor_grad_norm = nn.utils.clip_grad_norm_(
+                self.policy.actor.parameters(), self.max_grad_norm
+            )
         else:
             actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
 
         self.policy.actor_optimizer.step()
 
-        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
+        value_loss = self.cal_value_loss(
+            values, value_preds_batch, return_batch, active_masks_batch
+        )
 
         self.policy.critic_optimizer.zero_grad()
 
         (value_loss * self.value_loss_coef).backward()
 
         if self._use_max_grad_norm:
-            critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
+            critic_grad_norm = nn.utils.clip_grad_norm_(
+                self.policy.critic.parameters(), self.max_grad_norm
+            )
         else:
             critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
 
         self.policy.critic_optimizer.step()
 
-        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
+        return (
+            value_loss,
+            critic_grad_norm,
+            policy_loss,
+            dist_entropy,
+            actor_grad_norm,
+            imp_weights,
+        )
 
     def train(self, buffer, update_actor=True):
         """
@@ -178,7 +217,9 @@ class HAPPO():
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
         if self._use_popart:
-            advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(buffer.value_preds[:-1])
+            advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(
+                buffer.value_preds[:-1]
+            )
         else:
             advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
 
@@ -190,36 +231,49 @@ class HAPPO():
 
         train_info = {}
 
-        train_info['value_loss'] = 0
-        train_info['policy_loss'] = 0
-        train_info['dist_entropy'] = 0
-        train_info['actor_grad_norm'] = 0
-        train_info['critic_grad_norm'] = 0
-        train_info['ratio'] = 0
+        train_info["value_loss"] = 0
+        train_info["policy_loss"] = 0
+        train_info["dist_entropy"] = 0
+        train_info["actor_grad_norm"] = 0
+        train_info["critic_grad_norm"] = 0
+        train_info["ratio"] = 0
 
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
-                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.recurrent_generator(
+                    advantages, self.num_mini_batch, self.data_chunk_length
+                )
             elif self._use_naive_recurrent:
-                data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.naive_recurrent_generator(
+                    advantages, self.num_mini_batch
+                )
             else:
-                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.feed_forward_generator(
+                    advantages, self.num_mini_batch
+                )
 
             for sample in data_generator:
-                value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights = self.ppo_update(sample, update_actor=update_actor)
+                (
+                    value_loss,
+                    critic_grad_norm,
+                    policy_loss,
+                    dist_entropy,
+                    actor_grad_norm,
+                    imp_weights,
+                ) = self.ppo_update(sample, update_actor=update_actor)
 
-                train_info['value_loss'] += value_loss.item()
-                train_info['policy_loss'] += policy_loss.item()
-                train_info['dist_entropy'] += dist_entropy.item()
-                train_info['actor_grad_norm'] += actor_grad_norm
-                train_info['critic_grad_norm'] += critic_grad_norm
-                train_info['ratio'] += imp_weights.mean()
+                train_info["value_loss"] += value_loss.item()
+                train_info["policy_loss"] += policy_loss.item()
+                train_info["dist_entropy"] += dist_entropy.item()
+                train_info["actor_grad_norm"] += actor_grad_norm
+                train_info["critic_grad_norm"] += critic_grad_norm
+                train_info["ratio"] += imp_weights.mean()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
         for k in train_info.keys():
             train_info[k] /= num_updates
- 
+
         return train_info
 
     def prep_training(self):

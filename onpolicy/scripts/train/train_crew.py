@@ -17,10 +17,10 @@ from onpolicy.envs.env_wrappers import ChooseSubprocVecEnv, ChooseDummyVecEnv
 def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
-            if all_args.env_name == "Hanabi":
+            if all_args.env_name == "The_Crew":
                 assert (
-                    all_args.num_agents > 1 and all_args.num_agents < 6
-                ), "num_agents can be only between 2-5."
+                    all_args.num_agents > 2 and all_args.num_agents < 6
+                ), "num_agents can be only between 3-5."
                 env = HanabiEnv(all_args, (all_args.seed + rank * 1000))
             else:
                 print("Can not support the " + all_args.env_name + "environment.")
@@ -41,10 +41,10 @@ def make_train_env(all_args):
 def make_eval_env(all_args):
     def get_env_fn(rank):
         def init_env():
-            if all_args.env_name == "Hanabi":
+            if all_args.env_name == "The_Crew":
                 assert (
-                    all_args.num_agents > 1 and all_args.num_agents < 6
-                ), "num_agents can be only between 2-5."
+                    all_args.num_agents > 2 and all_args.num_agents < 6
+                ), "num_agents can be only between 3-5."
                 env = HanabiEnv(all_args, (all_args.seed * 50000 + rank * 10000))
             else:
                 print("Can not support the " + all_args.env_name + "environment.")

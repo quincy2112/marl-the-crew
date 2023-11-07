@@ -10,8 +10,7 @@ class StarCraftCapabilityEnvWrapper(MultiAgentEnv):
         self._parse_distribution_config()
         self.env = StarCraft2Env(**kwargs)
         assert (
-            self.distribution_config.keys()
-            == kwargs["capability_config"].keys()
+            self.distribution_config.keys() == kwargs["capability_config"].keys()
         ), "Must give distribution config and capability config the same keys"
 
     def _parse_distribution_config(self):

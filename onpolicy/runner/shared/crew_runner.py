@@ -13,11 +13,11 @@ def _t2n(x):
     return x.detach().cpu().numpy()
 
 
-class HanabiRunner(Runner):
-    """Runner class to perform training, evaluation. and data collection for Hanabi. See parent class for details."""
+class CrewRunner(Runner):
+    """Runner class to perform training, evaluation. and data collection for The Crew. See parent class for details."""
 
     def __init__(self, config):
-        super(HanabiRunner, self).__init__(config)
+        super(CrewRunner, self).__init__(config)
         self.true_total_num_steps = 0
 
     def run(self):
@@ -145,7 +145,7 @@ class HanabiRunner(Runner):
                     )
                 )
 
-                if self.env_name == "Hanabi":
+                if self.env_name == "theCrew":
                     average_score = (
                         np.mean(self.scores) if len(self.scores) > 0 else 0.0
                     )

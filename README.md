@@ -126,3 +126,12 @@ year={2022}
 }
 ```
 
+##  Setup Instructions for The Crew
+
+Instructions for AWS Deep Learning 2.0.1 AMI:
+
+conda create -n marl
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+cd onpolicy
+pip install -e .
+pip install wandb icecream setproctitle gym seaborn tensorboardX slackweb psutil slackweb pyastar2d einops openai absl-py

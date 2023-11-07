@@ -5,10 +5,12 @@ import os
 from setuptools import setup, find_packages
 import setuptools
 
+
 def get_version() -> str:
     # https://packaging.python.org/guides/single-sourcing-package-version/
     init = open(os.path.join("onpolicy", "__init__.py"), "r").read().split()
     return init[init.index("__version__") + 2][1:-1]
+
 
 setup(
     name="onpolicy",  # Replace with your own username
@@ -29,5 +31,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     keywords="multi-agent reinforcement learning platform pytorch",
-    python_requires='>=3.6',
+    python_requires=">=3.6",
 )

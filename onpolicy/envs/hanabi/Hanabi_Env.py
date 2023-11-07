@@ -115,7 +115,10 @@ class HanabiEnv(Environment):
         """
         self._seed = seed
         # max:action 48 obs=1380 min:action=20 obs=783 score=25
-        if (args.hanabi_name == "Hanabi-Full" or args.hanabi_name == "Hanabi-Full-CardKnowledge"):
+        if (
+            args.hanabi_name == "Hanabi-Full"
+            or args.hanabi_name == "Hanabi-Full-CardKnowledge"
+        ):
             config = {
                 "colors": 5,
                 "ranks": 5,
@@ -123,7 +126,7 @@ class HanabiEnv(Environment):
                 "max_information_tokens": 8,
                 "max_life_tokens": 3,
                 "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
-                "seed": self._seed
+                "seed": self._seed,
             }
         # max:action 48 obs=680 min:action=20 obs=433 score=25 use memory
         elif args.hanabi_name == "Hanabi-Full-Minimal":
@@ -134,9 +137,11 @@ class HanabiEnv(Environment):
                 "max_information_tokens": 8,
                 "max_life_tokens": 3,
                 "observation_type": pyhanabi.AgentObservationType.MINIMAL.value,
-                "seed": self._seed
+                "seed": self._seed,
             }
-        elif args.hanabi_name == "Hanabi-Small":  # max:action=32 obs=356 min:action=11 obs=191 score=10
+        elif (
+            args.hanabi_name == "Hanabi-Small"
+        ):  # max:action=32 obs=356 min:action=11 obs=191 score=10
             config = {
                 "colors": 2,
                 "ranks": 5,
@@ -145,9 +150,11 @@ class HanabiEnv(Environment):
                 "max_information_tokens": 3,
                 "max_life_tokens": 1,
                 "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
-                "seed": self._seed
+                "seed": self._seed,
             }
-        elif args.hanabi_name == "Hanabi-Very-Small":  # max:action=28 obs=215 min:action=10 obs=116 score=5
+        elif (
+            args.hanabi_name == "Hanabi-Very-Small"
+        ):  # max:action=28 obs=215 min:action=10 obs=116 score=5
             config = {
                 "colors": 1,
                 "ranks": 5,
@@ -156,7 +163,7 @@ class HanabiEnv(Environment):
                 "max_information_tokens": 3,
                 "max_life_tokens": 1,
                 "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
-                "seed": self._seed
+                "seed": self._seed,
             }
         else:
             raise ValueError("Unknown environment {}".format(args.hanabi_name))
@@ -167,7 +174,8 @@ class HanabiEnv(Environment):
         self.obs_instead_of_state = args.use_obs_instead_of_state
 
         self.observation_encoder = pyhanabi.ObservationEncoder(
-            self.game, pyhanabi.ObservationEncoderType.CANONICAL)
+            self.game, pyhanabi.ObservationEncoderType.CANONICAL
+        )
         self.players = self.game.num_players()
         self.action_space = []
         self.observation_space = []
@@ -175,9 +183,11 @@ class HanabiEnv(Environment):
         for i in range(self.players):
             self.action_space.append(Discrete(self.num_moves()))
             self.observation_space.append(
-                [self.vectorized_observation_shape()[0]+self.players])
+                [self.vectorized_observation_shape()[0] + self.players]
+            )
             self.share_observation_space.append(
-                [self.vectorized_share_observation_shape()[0]+self.players])
+                [self.vectorized_share_observation_shape()[0] + self.players]
+            )
 
     def seed(self, seed=None):
         if seed is None:
@@ -294,24 +304,34 @@ class HanabiEnv(Environment):
             observation = self._make_observation_all_players()
             current_player = self.state.cur_player()
             observation["current_player"] = current_player
-            player_observations = observation['player_observations']
-            
-            agent_turn = np.zeros(self.players, dtype=np.int).tolist()
+            player_observations = observation["player_observations"]
+
+            agent_turn = np.zeros(self.players, dtype=np.int_).tolist()
             agent_turn[current_player] = 1
 
             available_actions = np.zeros(self.num_moves())
-            available_actions[player_observations[current_player]['legal_moves_as_int']] = 1.0
+            available_actions[
+                player_observations[current_player]["legal_moves_as_int"]
+            ] = 1.0
 
-            obs = player_observations[current_player]['vectorized'] + agent_turn
+            obs = player_observations[current_player]["vectorized"] + agent_turn
             if self.obs_instead_of_state:
-                share_obs = [player_observations[i]['vectorized'] for i in range(self.players)]
+                share_obs = [
+                    player_observations[i]["vectorized"] for i in range(self.players)
+                ]
                 concat_obs = np.concatenate(share_obs, axis=0)
                 share_obs = np.concatenate((concat_obs, agent_turn), axis=0)
             else:
-                share_obs = player_observations[current_player]['vectorized_ownhand'] + player_observations[current_player]['vectorized'] + agent_turn
+                share_obs = (
+                    player_observations[current_player]["vectorized_ownhand"]
+                    + player_observations[current_player]["vectorized"]
+                    + agent_turn
+                )
         else:
-            obs = np.zeros(self.vectorized_observation_shape()[0]+self.players)
-            share_obs = np.zeros(self.vectorized_share_observation_shape()[0]+self.players)
+            obs = np.zeros(self.vectorized_observation_shape()[0] + self.players)
+            share_obs = np.zeros(
+                self.vectorized_share_observation_shape()[0] + self.players
+            )
             available_actions = np.zeros(self.num_moves())
         return obs, share_obs, available_actions
 
@@ -335,7 +355,10 @@ class HanabiEnv(Environment):
         if self.obs_instead_of_state:
             return [self.observation_encoder.shape()[0] * self.players]
         else:
-            return [self.observation_encoder.ownhandshape()[0] + self.observation_encoder.shape()[0]]
+            return [
+                self.observation_encoder.ownhandshape()[0]
+                + self.observation_encoder.shape()[0]
+            ]
 
     def num_moves(self):
         """Returns the total number of moves in this game (legal or not).
@@ -459,11 +482,13 @@ class HanabiEnv(Environment):
             action = self._build_move(action)
         elif isinstance(action, int):
             if action == -1:  # invalid action
-                obs = np.zeros(self.vectorized_observation_shape()[0]+self.players)
-                share_obs = np.zeros(self.vectorized_share_observation_shape()[0]+self.players)
+                obs = np.zeros(self.vectorized_observation_shape()[0] + self.players)
+                share_obs = np.zeros(
+                    self.vectorized_share_observation_shape()[0] + self.players
+                )
                 rewards = np.zeros((self.players, 1))
                 done = None
-                infos = {'score': self.state.score()}
+                infos = {"score": self.state.score()}
                 available_actions = np.zeros(self.num_moves())
                 return obs, share_obs, rewards, done, infos, available_actions
             # Convert int action into a Hanabi move.
@@ -480,27 +505,35 @@ class HanabiEnv(Environment):
 
         observation = self._make_observation_all_players()
         current_player = self.state.cur_player()
-        player_observations = observation['player_observations']
+        player_observations = observation["player_observations"]
 
         available_actions = np.zeros(self.num_moves())
-        available_actions[player_observations[current_player]['legal_moves_as_int']] = 1.0
+        available_actions[
+            player_observations[current_player]["legal_moves_as_int"]
+        ] = 1.0
 
-        agent_turn = np.zeros(self.players, dtype=np.int).tolist()
+        agent_turn = np.zeros(self.players, dtype=np.int_).tolist()
         agent_turn[current_player] = 1
 
-        obs = player_observations[current_player]['vectorized'] + agent_turn
+        obs = player_observations[current_player]["vectorized"] + agent_turn
         if self.obs_instead_of_state:
-            share_obs = [player_observations[i]['vectorized'] for i in range(self.players)]
+            share_obs = [
+                player_observations[i]["vectorized"] for i in range(self.players)
+            ]
             concat_obs = np.concatenate(share_obs, axis=0)
             share_obs = np.concatenate((concat_obs, agent_turn), axis=0)
         else:
-            share_obs = player_observations[current_player]['vectorized_ownhand'] + player_observations[current_player]['vectorized'] + agent_turn
+            share_obs = (
+                player_observations[current_player]["vectorized_ownhand"]
+                + player_observations[current_player]["vectorized"]
+                + agent_turn
+            )
 
         done = self.state.is_terminal()
         # Reward is score differential. May be large and negative at game end.
         reward = self.state.score() - last_score
         rewards = [[reward]] * self.players
-        infos = {'score': self.state.score()}
+        infos = {"score": self.state.score()}
 
         return obs, share_obs, rewards, done, infos, available_actions
 
@@ -511,9 +544,12 @@ class HanabiEnv(Environment):
           dict, containing observations for all players.
         """
         obs = {}
-        player_observations = [self._extract_dict_from_backend(
-            player_id, self.state.observation(player_id))
-            for player_id in range(self.players)]  # pylint: disable=bad-continuation
+        player_observations = [
+            self._extract_dict_from_backend(
+                player_id, self.state.observation(player_id)
+            )
+            for player_id in range(self.players)
+        ]  # pylint: disable=bad-continuation
         obs["player_observations"] = player_observations
         obs["current_player"] = self.state.cur_player()
         return obs
@@ -573,7 +609,8 @@ class HanabiEnv(Environment):
         # ipdb.set_trace()
         obs_dict["vectorized"] = self.observation_encoder.encode(observation)
         obs_dict["vectorized_ownhand"] = self.observation_encoder.encodeownhand(
-            observation)
+            observation
+        )
         obs_dict["pyhanabi"] = observation
 
         return obs_dict
@@ -603,13 +640,14 @@ class HanabiEnv(Environment):
         Raises:
           ValueError: Unknown action type.
         """
-        assert isinstance(
-            action, dict), "Expected dict, got: {}".format(action)
-        assert "action_type" in action, ("Action should contain `action_type`. "
-                                         "action: {}").format(action)
+        assert isinstance(action, dict), "Expected dict, got: {}".format(action)
+        assert "action_type" in action, (
+            "Action should contain `action_type`. " "action: {}"
+        ).format(action)
         action_type = action["action_type"]
-        assert (action_type in MOVE_TYPES), (
-            "action_type: {} should be one of: {}".format(action_type, MOVE_TYPES))
+        assert action_type in MOVE_TYPES, "action_type: {} should be one of: {}".format(
+            action_type, MOVE_TYPES
+        )
 
         if action_type == "PLAY":
             card_index = action["card_index"]
@@ -621,21 +659,22 @@ class HanabiEnv(Environment):
             target_offset = action["target_offset"]
             rank = action["rank"]
             move = pyhanabi.HanabiMove.get_reveal_rank_move(
-                target_offset=target_offset, rank=rank)
+                target_offset=target_offset, rank=rank
+            )
         elif action_type == "REVEAL_COLOR":
             target_offset = action["target_offset"]
             assert isinstance(action["color"], str)
             color = color_char_to_idx(action["color"])
             move = pyhanabi.HanabiMove.get_reveal_color_move(
-                target_offset=target_offset, color=color)
+                target_offset=target_offset, color=color
+            )
         else:
             raise ValueError("Unknown action_type: {}".format(action_type))
 
         legal_moves = self.state.legal_moves()
-        assert (str(move) in map(
-            str,
-            legal_moves)), "Illegal action: {}. Move should be one of : {}".format(
-                move, legal_moves)
+        assert str(move) in map(
+            str, legal_moves
+        ), "Illegal action: {}. Move should be one of : {}".format(move, legal_moves)
 
         return move
 
@@ -660,23 +699,20 @@ def make(environment_name="Hanabi-Full", num_players=2, pyhanabi_path=None):
         assert pyhanabi.try_cdef(prefixes=prefixes), "cdef failed to load"
         assert pyhanabi.try_load(prefixes=prefixes), "library failed to load"
 
-    if (environment_name == "Hanabi-Full" or
-            environment_name == "Hanabi-Full-CardKnowledge"):
+    if (
+        environment_name == "Hanabi-Full"
+        or environment_name == "Hanabi-Full-CardKnowledge"
+    ):
         return HanabiEnv(
             config={
-                "colors":
-                    5,
-                "ranks":
-                    5,
-                "players":
-                    num_players,
-                "max_information_tokens":
-                    8,
-                "max_life_tokens":
-                    3,
-                "observation_type":
-                    pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value
-            })
+                "colors": 5,
+                "ranks": 5,
+                "players": num_players,
+                "max_information_tokens": 8,
+                "max_life_tokens": 3,
+                "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
+            }
+        )
     elif environment_name == "Hanabi-Full-Minimal":
         return HanabiEnv(
             config={
@@ -685,44 +721,33 @@ def make(environment_name="Hanabi-Full", num_players=2, pyhanabi_path=None):
                 "players": num_players,
                 "max_information_tokens": 8,
                 "max_life_tokens": 3,
-                "observation_type": pyhanabi.AgentObservationType.MINIMAL.value
-            })
+                "observation_type": pyhanabi.AgentObservationType.MINIMAL.value,
+            }
+        )
     elif environment_name == "Hanabi-Small":
         return HanabiEnv(
             config={
-                "colors":
-                    2,
-                "ranks":
-                    5,
-                "players":
-                    num_players,
-                "hand_size":
-                    2,
-                "max_information_tokens":
-                    3,
-                "max_life_tokens":
-                    1,
-                "observation_type":
-                    pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value
-            })
+                "colors": 2,
+                "ranks": 5,
+                "players": num_players,
+                "hand_size": 2,
+                "max_information_tokens": 3,
+                "max_life_tokens": 1,
+                "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
+            }
+        )
     elif environment_name == "Hanabi-Very-Small":
         return HanabiEnv(
             config={
-                "colors":
-                    1,
-                "ranks":
-                    5,
-                "players":
-                    num_players,
-                "hand_size":
-                    2,
-                "max_information_tokens":
-                    3,
-                "max_life_tokens":
-                    1,
-                "observation_type":
-                    pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value
-            })
+                "colors": 1,
+                "ranks": 5,
+                "players": num_players,
+                "hand_size": 2,
+                "max_information_tokens": 3,
+                "max_life_tokens": 1,
+                "observation_type": pyhanabi.AgentObservationType.CARD_KNOWLEDGE.value,
+            }
+        )
     else:
         raise ValueError("Unknown environment {}".format(environment_name))
 

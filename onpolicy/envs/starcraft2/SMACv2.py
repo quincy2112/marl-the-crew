@@ -1,7 +1,10 @@
-from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper # original smac v2 environment
+from smacv2.env.starcraft2.wrapper import (
+    StarCraftCapabilityEnvWrapper,
+)  # original smac v2 environment
 import random
 from gym.spaces import Discrete
 import numpy as np
+
 
 class SMACv2(StarCraftCapabilityEnvWrapper):
     def __init__(self, **kwargs):
@@ -9,7 +12,7 @@ class SMACv2(StarCraftCapabilityEnvWrapper):
         self.action_space = []
         self.observation_space = []
         self.share_observation_space = []
-        
+
         self.n_agents = self.env.n_agents
 
         for i in range(self.env.n_agents):
@@ -24,7 +27,9 @@ class SMACv2(StarCraftCapabilityEnvWrapper):
     def reset(self):
         obs, state = super().reset()
         state = [state for i in range(self.env.n_agents)]
-        avail_actions = [self.get_avail_agent_actions(i) for i in range(self.env.n_agents)]
+        avail_actions = [
+            self.get_avail_agent_actions(i) for i in range(self.env.n_agents)
+        ]
         return obs, state, avail_actions
 
     def step(self, actions):
@@ -35,11 +40,15 @@ class SMACv2(StarCraftCapabilityEnvWrapper):
         rewards = [[reward]] * self.env.n_agents
         dones = [terminated] * self.env.n_agents
         infos = [info] * self.env.n_agents
-        avail_actions = [self.get_avail_agent_actions(i) for i in range(self.env.n_agents)]
-        
-        bad_transition = True if self.env._episode_steps >= self.env.episode_limit else False
+        avail_actions = [
+            self.get_avail_agent_actions(i) for i in range(self.env.n_agents)
+        ]
+
+        bad_transition = (
+            True if self.env._episode_steps >= self.env.episode_limit else False
+        )
         for info in infos:
-            info['bad_transition'] = bad_transition
+            info["bad_transition"] = bad_transition
             info["battles_won"] = self.env.battles_won
             info["battles_game"] = self.env.battles_game
             info["battles_draw"] = self.env.timeouts

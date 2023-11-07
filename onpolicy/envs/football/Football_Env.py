@@ -6,12 +6,12 @@ import numpy as np
 
 
 class FootballEnv(object):
-    '''Wrapper to make Google Research Football environment compatible'''
+    """Wrapper to make Google Research Football environment compatible"""
 
     def __init__(self, args):
         self.num_agents = args.num_agents
         self.scenario_name = args.scenario_name
-        
+
         # make env
         if not (args.use_render and args.save_videos):
             self.env = football_env.create_environment(
@@ -22,7 +22,7 @@ class FootballEnv(object):
                 number_of_left_players_agent_controls=args.num_agents,
                 number_of_right_players_agent_controls=0,
                 channel_dimensions=(args.smm_width, args.smm_height),
-                render=(args.use_render and args.save_gifs)
+                render=(args.use_render and args.save_gifs),
             )
         else:
             # render env and save videos
@@ -39,9 +39,9 @@ class FootballEnv(object):
                 render=True,
                 write_video=True,
                 dump_frequency=1,
-                logdir=args.video_dir
+                logdir=args.video_dir,
             )
-            
+
         self.max_steps = self.env.unwrapped.observation()[0]["steps_left"]
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
@@ -56,22 +56,25 @@ class FootballEnv(object):
             self.share_observation_space.append(self.env.observation_space)
         else:
             for idx in range(self.num_agents):
-                self.action_space.append(spaces.Discrete(
-                    n=self.env.action_space[idx].n
-                ))
-                self.observation_space.append(spaces.Box(
-                    low=self.env.observation_space.low[idx],
-                    high=self.env.observation_space.high[idx],
-                    shape=self.env.observation_space.shape[1:],
-                    dtype=self.env.observation_space.dtype
-                ))
-                self.share_observation_space.append(spaces.Box(
-                    low=self.env.observation_space.low[idx],
-                    high=self.env.observation_space.high[idx],
-                    shape=self.env.observation_space.shape[1:],
-                    dtype=self.env.observation_space.dtype
-                ))
-
+                self.action_space.append(
+                    spaces.Discrete(n=self.env.action_space[idx].n)
+                )
+                self.observation_space.append(
+                    spaces.Box(
+                        low=self.env.observation_space.low[idx],
+                        high=self.env.observation_space.high[idx],
+                        shape=self.env.observation_space.shape[1:],
+                        dtype=self.env.observation_space.dtype,
+                    )
+                )
+                self.share_observation_space.append(
+                    spaces.Box(
+                        low=self.env.observation_space.low[idx],
+                        high=self.env.observation_space.high[idx],
+                        shape=self.env.observation_space.shape[1:],
+                        dtype=self.env.observation_space.dtype,
+                    )
+                )
 
     def reset(self):
         obs = self.env.reset()
@@ -110,6 +113,10 @@ class FootballEnv(object):
         info.update(state[0])
         info["max_steps"] = self.max_steps
         info["active"] = np.array([state[i]["active"] for i in range(self.num_agents)])
-        info["designated"] = np.array([state[i]["designated"] for i in range(self.num_agents)])
-        info["sticky_actions"] = np.stack([state[i]["sticky_actions"] for i in range(self.num_agents)])
+        info["designated"] = np.array(
+            [state[i]["designated"] for i in range(self.num_agents)]
+        )
+        info["sticky_actions"] = np.stack(
+            [state[i]["sticky_actions"] for i in range(self.num_agents)]
+        )
         return info
