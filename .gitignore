@@ -9,7 +9,7 @@ win_rate
 RODE
 *.egg-info
 wandb
-.vscode
+# .vscode
 api
 logs
 .nfs*

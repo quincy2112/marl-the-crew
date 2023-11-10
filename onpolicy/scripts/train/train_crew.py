@@ -8,10 +8,10 @@ import numpy as np
 from pathlib import Path
 import torch
 from onpolicy.config import get_config
-from onpolicy.envs.hanabi.Hanabi_Env import HanabiEnv
+from onpolicy.envs.thecrew.the_crew_Env import CrewEnv
 from onpolicy.envs.env_wrappers import ChooseSubprocVecEnv, ChooseDummyVecEnv
 
-"""Train script for Hanabi."""
+"""Train script for The Crew."""
 
 
 def make_train_env(all_args):
@@ -21,7 +21,7 @@ def make_train_env(all_args):
                 assert (
                     all_args.num_agents > 2 and all_args.num_agents < 6
                 ), "num_agents can be only between 3-5."
-                env = HanabiEnv(all_args, (all_args.seed + rank * 1000))
+                env = CrewEnv(all_args, (all_args.seed + rank * 1000))
             else:
                 print("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
@@ -45,7 +45,7 @@ def make_eval_env(all_args):
                 assert (
                     all_args.num_agents > 2 and all_args.num_agents < 6
                 ), "num_agents can be only between 3-5."
-                env = HanabiEnv(all_args, (all_args.seed * 50000 + rank * 10000))
+                env = CrewEnv(all_args, (all_args.seed * 50000 + rank * 10000))
             else:
                 print("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
@@ -64,13 +64,14 @@ def make_eval_env(all_args):
 
 def parse_args(args, parser):
     parser.add_argument(
-        "--hanabi_name",
+        "--crew_name",
         type=str,
-        default="Hanabi-Very-Small",
+        default="TheCrew-small-no_rocket",
         help="Which env to run on",
     )
-    parser.add_argument("--num_agents", type=int, default=2, help="number of players")
-
+    parser.add_argument("--num_agents", type=int, default=4, help="number of players")
+    parser.add_argument('--num_tasks', type=int, default=1, help="number of tasks")
+    parser.add_argument('--num_hints', type=int, default=0, help="number of hints. Should probably only be 0 or 1")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -113,7 +114,7 @@ def main(args):
     run_dir = (
         Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + "/results")
         / all_args.env_name
-        / all_args.hanabi_name
+        / all_args.crew_name
         / all_args.algorithm_name
         / all_args.experiment_name
     )
@@ -132,7 +133,7 @@ def main(args):
             + str(all_args.experiment_name)
             + "_seed"
             + str(all_args.seed),
-            group=all_args.hanabi_name,
+            group=all_args.crew_name,
             dir=str(run_dir),
             job_type="training",
             reinit=True,
@@ -173,7 +174,7 @@ def main(args):
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
     num_agents = all_args.num_agents
-
+    hints = all_args.num_hints
     config = {
         "all_args": all_args,
         "envs": envs,
@@ -181,16 +182,12 @@ def main(args):
         "num_agents": num_agents,
         "device": device,
         "run_dir": run_dir,
+        "hints": hints,
     }
 
     # run experiments
-    if all_args.share_policy:
-        from onpolicy.runner.shared.hanabi_runner_forward import HanabiRunner as Runner
-    else:
-        from onpolicy.runner.separated.hanabi_runner_forward import (
-            HanabiRunner as Runner,
-        )
-    # print(config)
+    from onpolicy.runner.shared.crew_runner import CrewRunner as Runner
+
     runner = Runner(config)
     runner.run()
 

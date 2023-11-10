@@ -134,7 +134,7 @@ class CrewRunner(Runner):
                 end = time.time()
                 print(
                     "\n Env {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n".format(
-                        self.all_args.hanabi_name,
+                        self.all_args.crew_name,
                         self.algorithm_name,
                         self.experiment_name,
                         episode,
