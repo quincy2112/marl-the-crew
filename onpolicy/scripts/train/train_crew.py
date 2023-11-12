@@ -71,7 +71,7 @@ def parse_args(args, parser):
     )
     parser.add_argument("--num_agents", type=int, default=4, help="number of players")
     parser.add_argument('--num_tasks', type=int, default=1, help="number of tasks")
-    parser.add_argument('--num_hints', type=int, default=0, help="number of hints. Should probably only be 0 or 1")
+    parser.add_argument('--num_hints', type=int, default=0, help="number of hints. 0 or 1")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
