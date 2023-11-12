@@ -15,6 +15,19 @@ REWARD_MAP = {
     "lose": -10,
 }
 
+REWARD_MAP_HINT_PENALTY = {
+    "task_complete": 1,
+    "win": 10,
+    "lose": -10,
+    "hint_remaining": -2
+}
+
+HINT_TYPE_DICT = {
+    'lowest': 0,
+    'highest': 1,
+    'only': 2,
+}
+
 class Environment(object):
     """Abstract Environment interface.
 
@@ -115,8 +128,12 @@ class CrewEnv(Environment):
             self.tasks: dict[str, list[tuple[str, int]]] = {}
             self.suit_counters: dict[str, Counter] = {}
             self.tasks_owner: dict[tuple[str, int], str] = {}
-            self.current_trick: list[tuple[str, tuple[str, int]]] = []
+            # self.current_trick: list[tuple[str, tuple[str, int]]] = []
+            self.current_trick: dict[str, tuple[str, int]] = {}
             self.discards = []
+            self.trick_suit= None
+            self.remaining_hints = {agent: self.config['hints'] for agent in self.agents}
+            self.hinted_cards = {agent: [] for agent in self.agents}
             for agent in self.agents:
                 self.hands[agent] = []
                 self.tasks[agent] = []
@@ -162,23 +179,46 @@ class CrewEnv(Environment):
         vectorized_discards[discards] = 1
 
         vectorized_current_trick = np.zeros(self.config['players'] * self.deck_shape())
-        for agent, card in self.current_trick:
+        ordered_agents = self.ordered_obs_players(agent)
+        for agent in ordered_agents:
+            if agent not in self.current_trick:
+                continue
+            card = self.current_trick[agent]
             vectorized_current_trick[self.agents.index(agent) * self.deck_shape() + self.playing_cards_bidict[card]] = 1
         
         vectorized_tasks = np.zeros(self.config['players'] * self.deck_shape())
-        for agent in self.agents:
+        for agent in ordered_agents:
             for task in self.tasks[agent]:
                 vectorized_tasks[self.agents.index(agent) * self.deck_shape() + self.task_cards_bidict[task]] = 1
 
-        return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks])
+        # if self.config['hints'] > 0:
+        #     hints = np.zeros(self.config['players'] * self.config['hints'])
+        #     hints[self.agents.index(agent) * self.config['hints'] : self.agents.index(agent) * self.config['hints'] + self.remaining_hints[agent]] = 1
+        #     return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, hints])
+        
+        vectorized_trick_suit = np.zeros(len(self.suits))
+        if self.trick_suit is not None:
+            vectorized_trick_suit[self.suits.index(self.trick_suit)] = 1
+        return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
     
+    def get_hints_vector(self, agent):
+
+        agent_hints = np.zeros(self.deck_shape()+3)
+        hint_type, card = self.hinted_cards[agent]
+        agent_hints[self.playing_cards_bidict[card]] = 1
+        agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
+
+        return agent_hints
+
     def get_shared_observation(self):
         """
         When using centralized value function, value function takes in entire
         state of the game, not just agent's observation.
         """
+        ordered_agents = self.ordered_obs_players(self.agent_selection)
+
         hands = []
-        for agent in self.agents:
+        for agent in ordered_agents:
             hands += [self.playing_cards_bidict[card] for card in self.hands[agent]]
         vectorized_hands = np.zeros(self.config['players'] * self.deck_shape())
         vectorized_hands[hands] = 1
@@ -188,36 +228,48 @@ class CrewEnv(Environment):
         vectorized_discards[discards] = 1
 
         vectorized_current_trick = np.zeros(self.config['players'] * self.deck_shape())
-        for agent, card in self.current_trick:
+        for agent in ordered_agents:
+            if agent not in self.current_trick:
+                continue
+            card = self.current_trick[agent]
             vectorized_current_trick[self.agents.index(agent) * self.deck_shape() + self.playing_cards_bidict[card]] = 1
         
         vectorized_tasks = np.zeros(self.config['players'] * self.deck_shape())
-        for agent in self.agents:
+        for agent in ordered_agents:
             for task in self.tasks[agent]:
                 vectorized_tasks[self.agents.index(agent) * self.deck_shape() + self.task_cards_bidict[task]] = 1
 
-        return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks])
+        vectorized_trick_suit = np.zeros(len(self.suits))
+
+        if self.trick_suit is not None:
+            vectorized_trick_suit[self.suits.index(self.trick_suit)] = 1
+        return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
     
 
     def step(self, action):
         """
-        Action is the index of card to play
+        Action is tuple of "play" or "hint" and index of card to play or hint
         """
         action = action[0]
         reward = 0
         done = False
         assert self.playing_cards_bidict.inverse[action] in self.hands[self.agent_selection], (self.playing_cards_bidict.inverse[action], self.hands[self.agent_selection])
         self.hands[self.agent_selection].remove(self.playing_cards_bidict.inverse[action])
-        self.current_trick.append((self.agent_selection, self.playing_cards_bidict.inverse[action]))
+        if self.trick_suit is None:
+            self.trick_suit = self.playing_cards_bidict.inverse[action][0]
+
+        self.current_trick[self.agent_selection]= self.playing_cards_bidict.inverse[action]
         self.suit_counters[self.agent_selection][self.playing_cards_bidict.inverse[action][0]] -= 1
         
         # check if trick is over
-        if self.agent_selector.is_last() and len(self.current_trick) == len(
+        if self.agent_selector.is_last() and len(self.current_trick.keys()) == len(
             self.agents
         ):
-            trick_suit, trick_value = self.current_trick[0][1]
-            trick_owner = self.current_trick[0][0]
-            for card_player, (card_suit, card_value) in self.current_trick[1:]:
+            trick_suit = self.trick_suit
+            cur_trick_list = list(self.current_trick.items())
+            trick_value = cur_trick_list[0][1][1]
+            trick_owner = cur_trick_list[0][0]
+            for card_player, (card_suit, card_value) in cur_trick_list[1:]:
                 if card_suit == trick_suit and card_value > trick_value:
                     trick_value = card_value
                     trick_owner = card_player
@@ -227,7 +279,7 @@ class CrewEnv(Environment):
                     trick_owner = card_player
 
             # check if any task is completed
-            for _, card in self.current_trick:
+            for _, card in cur_trick_list:
                 if card in self.tasks_owner.keys():
                     task_owner = self.tasks_owner[card]
                     if task_owner == trick_owner:
@@ -249,7 +301,8 @@ class CrewEnv(Environment):
                         break
 
             self.reinit_agents_order(trick_owner)
-            self.current_trick = []
+            self.trick_suit = None
+            self.current_trick = {}
         self.agent_selection = self.agent_selector.next()
 
 
@@ -267,26 +320,40 @@ class CrewEnv(Environment):
     def shared_observation_shape(self):
         hands = self.config['players'] * self.deck_shape()
         
-        # TODO: hints 
+        # additional 3 for hint type. Note that history of when hints were played is lost!
+        if self.config['hints'] > 0:
+            hints = self.config['players'] * (self.deck_shape() + 3) 
+        else:
+            hints = 0
+        discards = self.deck_shape()
+
         discards = self.deck_shape()
 
         # TODO: current_trick does NOT include order cards were played. 
         current_trick = self.config['players'] * self.deck_shape()
         tasks = self.config['players'] * self.deck_shape()
 
-        return hands + discards + current_trick + tasks
+
+        trick_suit = len(self.suits)
+        return hands + discards + current_trick + tasks + hints + trick_suit
 
     def observation_shape(self):
         hand = self.deck_shape()
         
-        # TODO: hints = 
+        # additional 3 for hint type. Note that history of when hints were played is lost!
+        if self.config['hints'] > 0:
+            hints = self.config['players'] * (self.deck_shape() + 3) 
+        else:
+            hints = 0
         discards = self.deck_shape()
 
         # TODO: current_trick does NOT include order cards were played. 
         current_trick = self.config['players'] * self.deck_shape()
         tasks = self.config['players'] * self.deck_shape()
 
-        return hand + discards + current_trick + tasks
+        trick_suit = len(self.suits)
+
+        return hand + discards + current_trick + tasks + hints + trick_suit
 
     def seed(self, seed=None):
         if seed is None:
@@ -321,6 +388,9 @@ class CrewEnv(Environment):
         playing_cards: list[tuple[str, int]] = []
         task_cards: Deque[tuple[str, int]] = deque()
         # Color Cards & Task Cards
+
+
+
         for suit in ["B", "P", "G", "Y"][: self.config["colors"]]:
             for rank in range(1, self.config["ranks"] + 1):
                 playing_cards.append((suit, rank))
@@ -332,7 +402,27 @@ class CrewEnv(Environment):
             {k: idx for idx, k in enumerate(playing_cards)}
         )
         self.task_cards_bidict = bidict({k: idx for idx, k in enumerate(task_cards)})
+
+
+        self.suits = ["B", "P", "G", "Y"][: self.config["colors"]]
+        if self.config["rockets"] > 0:
+            self.suits.append("R")
+
+
         return playing_cards, task_cards
+    
+    def ordered_obs_players(self, agent):
+        """
+        Returns list of players in order from current player clockwise.
+
+        Used to ensure observations are consistent with relative player positions,
+        not absolute player positions.
+        """
+        # TODO: should probably store agent as index, not string 
+        agent_ind = int(agent.split('_')[1])
+        l = self.agents[:]
+        return l[-agent_ind:] + l[:-agent_ind]
+
     
 
     def close(self):
@@ -355,7 +445,7 @@ class CrewEnv(Environment):
         # condition 2
         if (
             self.suit_counters[agent][
-                (trick_basecard := self.current_trick[0][1])[0]
+                self.trick_suit
             ]
             == 0
         ):
@@ -363,8 +453,8 @@ class CrewEnv(Environment):
                 mask[self.playing_cards_bidict[card]] = 1
             return mask
         # condition 1
-        elif self.suit_counters[agent][trick_basecard[0]] > 0:
+        elif self.suit_counters[agent][self.trick_suit] > 0:
             for card in self.hands[agent]:
-                if card[0] == trick_basecard[0]:
+                if card[0] == self.trick_suit:
                     mask[self.playing_cards_bidict[card]] = 1
             return mask
