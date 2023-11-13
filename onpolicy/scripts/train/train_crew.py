@@ -12,7 +12,7 @@ from onpolicy.envs.thecrew.the_crew_Env import CrewEnv
 from onpolicy.envs.env_wrappers import ChooseSubprocVecEnv, ChooseDummyVecEnv
 
 """Train script for The Crew."""
-
+# os.environ["WANDB_PROJECT"] = "MAPPO-Crew"
 
 def make_train_env(all_args):
     def get_env_fn(rank):
@@ -72,6 +72,7 @@ def parse_args(args, parser):
     parser.add_argument("--num_agents", type=int, default=4, help="number of players")
     parser.add_argument('--num_tasks', type=int, default=1, help="number of tasks")
     parser.add_argument('--num_hints', type=int, default=0, help="number of hints. 0 or 1")
+    parser.add_argument('--unified_action_space', action= "store_true", default=False, help="Whether to use a unified action space for hints and plays. Default: False")
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -125,8 +126,8 @@ def main(args):
     if all_args.use_wandb:
         run = wandb.init(
             config=all_args,
-            project=all_args.env_name,
-            entity=all_args.user_name,
+            project="MAPPO-Crew",
+            entity=f'the_crew',
             notes=socket.gethostname(),
             name=str(all_args.algorithm_name)
             + "_"

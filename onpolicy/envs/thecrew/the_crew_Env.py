@@ -103,13 +103,14 @@ class CrewEnv(Environment):
                 "colors": 4,
                 "ranks": 9,
                 "players": args.num_agents,
-                "rockets": 9,
+                "rockets": 4,
                 "seed": self._seed,
             }
         else:
             raise ValueError("Unknown environment name: " + args.crew_name)
         config['hints'] = args.num_hints 
         config['tasks'] = args.num_tasks
+        config['unified_action_space'] = args.unified_action_space
         self.config = config
         self.playing_cards, self.task_cards = self.generateAllCards()
         self.possible_agents: list[str] = [f"player_{i}" for i in range(self.config['players'])]
@@ -187,8 +188,6 @@ class CrewEnv(Environment):
 
         return obs, share_obs, available_actions
     def get_observation(self, agent):
-        #TODO: order observations to be consistent. IE, first player index corresponds to self,
-        # next to next player in order, etc
         hand = [self.playing_cards_bidict[card] for card in self.hands[agent]]
         vectorized_hand = np.zeros(self.deck_shape())
         vectorized_hand[hand] = 1
@@ -238,6 +237,8 @@ class CrewEnv(Environment):
 
         return agent_hints
 
+
+    # TODO: try without centralized V
     def get_shared_observation(self):
         """
         When using centralized value function, value function takes in entire
@@ -353,7 +354,8 @@ class CrewEnv(Environment):
 
         obs = self.get_observation(self.agent_to_play)
         share_obs = self.get_shared_observation()
-        infos = {'scores': self.config['tasks'] -  len(self.tasks_owner.keys())}
+        infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
+        # print(infos)
         available_actions = self.legal_moves(self.agent_to_play)
         rewards = [[reward]] * self.config['players']
         return obs, share_obs, rewards, done, infos, available_actions
@@ -399,11 +401,14 @@ class CrewEnv(Environment):
 
         return hand + discards + current_trick + tasks + hints + trick_suit
     
+
+    #TODO: Different action space for hinting and not (double the action space)
     def action_shape(self):
         if self.config['hints'] > 0:
             return self.deck_shape() + 1
         else:
             return self.deck_shape()
+        
     def seed(self, seed=None):
         if seed is None:
             np.random.seed(1)
@@ -424,7 +429,7 @@ class CrewEnv(Environment):
         new_order = self.agents[idx:] + self.agents[0:idx]
         self.agent_selector.reinit(new_order)
 
-    # Random for now
+    # Random for now TODO: rocket based task cards
     def deal_task_cards(self):
         to_deal = random.sample(self.task_cards, self.config["tasks"])     
         for _ in range(len(to_deal)):
@@ -528,4 +533,3 @@ class CrewEnv(Environment):
                 elif len(cards) > 1:
                     mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
                     mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
-

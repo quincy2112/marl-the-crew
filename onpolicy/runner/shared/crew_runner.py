@@ -145,7 +145,7 @@ class CrewRunner(Runner):
                     )
                 )
 
-                if self.env_name == "theCrew":
+                if self.env_name == "The_Crew":
                     average_score = (
                         np.mean(self.scores) if len(self.scores) > 0 else 0.0
                     )
@@ -163,7 +163,6 @@ class CrewRunner(Runner):
                         )
 
                 train_infos["average_step_rewards"] = np.mean(self.buffer.rewards)
-
                 self.log_train(train_infos, self.true_total_num_steps)
 
             # eval
