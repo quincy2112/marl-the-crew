@@ -484,52 +484,71 @@ class CrewEnv(Environment):
 
     def legal_moves(self, agent):
         """
+        """
+        if self.config['hints'] == 0:
+            return self.get_action_mask(agent)
+
+        if self.config['unified_action_space']:
+            if self.hint_step:
+                return self.get_hinting_mask(agent)
+            else:
+                return np.concatenate(self.get_action_mask(agent), np.zeros(1))
+            
+        mask = np.zeros(self.deck_shape(), dtype=np.int8)
+        
+        return self.get_hinting_mask(agent)
+
+
+
+    def get_action_mask(self, agent):
+        """
         Legal Moves of a agent:
         1. if trick_basecard exist, play cards with color same as trick_basecard
         2. if trick_basecard exist, play any card if player don't have cards with color same as the trick_basecard
         3. if trick_basecard not exist(first player in turn), play any cards
-
-        Hints: Can hint if hint is available and card is highest, lowest, or only card of that suit in hand. No rockets
         """
-        mask = np.zeros(self.action_shape(), dtype=np.int8)
-        if not self.hint_step:
-            # condition 3
-            if self.agent_selector.is_first() and agent == self.agent_to_play:
-                for card in self.hands[self.agent_to_play]:
-                    mask[self.playing_cards_bidict[card]] = 1
-                return mask
-            # condition 2
-            if (
-                self.suit_counters[agent][
-                    self.trick_suit
-                ]
-                == 0
-            ):
-                for card in self.hands[self.agent_to_play]:
-                    mask[self.playing_cards_bidict[card]] = 1
-                return mask
-            # condition 1
-            elif self.suit_counters[agent][self.trick_suit] > 0:
-                for card in self.hands[agent]:
-                    if card[0] == self.trick_suit:
-                        mask[self.playing_cards_bidict[card]] = 1
-                return mask
-
-        else:
-            mask[-1] = 1 # action representing no hint
-            if self.remaining_hints[agent] == 0:
-                return mask
-
-            # TODO: more efficient method?
-            bucketed_cards = defaultdict(list)
+        mask = np.zeros(self.deck_shape(), dtype=np.int8)
+        # condition 3
+        if self.agent_selector.is_first() and agent == self.agent_to_play:
+            for card in self.hands[self.agent_to_play]:
+                mask[self.playing_cards_bidict[card]] = 1
+            return mask
+        # condition 2
+        if (
+            self.suit_counters[agent][
+                self.trick_suit
+            ]
+            == 0
+        ):
+            for card in self.hands[self.agent_to_play]:
+                mask[self.playing_cards_bidict[card]] = 1
+            return mask
+        # condition 1
+        elif self.suit_counters[agent][self.trick_suit] > 0:
             for card in self.hands[agent]:
-                if card[0] != "R":
-                    bucketed_cards[card[0]].append(card)
-            
+                if card[0] == self.trick_suit:
+                    mask[self.playing_cards_bidict[card]] = 1
+            return mask     
+    def get_hinting_mask(self, agent):
+        """
+        Hints: Can hint if hint is available and card is highest, lowest, or 
+        only card of that suit in hand. No rockets
+        """
+        mask = np.zeros(self.deck_shape()+1, dtype=np.int8)
+        mask[-1] = 1 # action representing no hint
+        if self.remaining_hints[agent] == 0:
+            return mask
 
-            for _, cards in bucketed_cards.items():
-                if len(cards) == 1:
-                    mask[self.playing_cards_bidict[cards[0]]] = 1
-                elif len(cards) > 1:
-                    mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
-                    mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
+        # TODO: more efficient method?
+        bucketed_cards = defaultdict(list)
+        for card in self.hands[agent]:
+            if card[0] != "R":
+                bucketed_cards[card[0]].append(card)
+        
+
+        for _, cards in bucketed_cards.items():
+            if len(cards) == 1:
+                mask[self.playing_cards_bidict[cards[0]]] = 1
+            elif len(cards) > 1:
+                mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
+                mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
