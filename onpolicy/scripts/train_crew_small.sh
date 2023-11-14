@@ -5,7 +5,7 @@ num_agents=4
 algo="mappo"
 exp="check"
 num_tasks=1
-num_hints=0
+num_hints=1
 seed_max=1
 ulimit -n 22222
 
@@ -15,7 +15,7 @@ do
     echo "seed is ${seed}:"
     CUDA_VISIBLE_DEVICES=0 python train/train_crew.py --env_name ${env} --algorithm_name ${algo} --experiment_name ${exp} \
     --crew_name ${crew} --num_agents ${num_agents} --num_tasks ${num_tasks} --num_hints ${num_hints} --seed ${seed} --n_training_threads 1 --n_rollout_threads 100 \
-    --num_mini_batch 1 --episode_length 100 --num_env_steps 10000000000000 --ppo_epoch 15 \
-    --gain 0.01 --lr 7e-4 --critic_lr 1e-3 --hidden_size 512 --layer_N 2 --entropy_coef 0.015 --user_name=qhughes22
+    --num_mini_batch 1 --episode_length 100 --num_env_steps 10000000000000 --ppo_epoch 15 --gamma 1 \
+    --gain 0.01 --lr 7e-4 --critic_lr 1e-3 --hidden_size 512 --layer_N 2 --entropy_coef 0.015 --user_name=qhughes22 --run_name hint_test
     echo "training is done!"
 done

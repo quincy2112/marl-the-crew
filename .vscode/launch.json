@@ -30,7 +30,7 @@
         "cwd": "${workspaceFolder}"
       },
           {
-        "name": "test_train_crew_nohint",
+        "name": "test_train_crew_hint",
         "type": "python",
         "request": "launch",
         "program": "${workspaceFolder}/onpolicy/scripts/train/train_crew.py", // Replace with the actual path to your Python script
@@ -38,6 +38,7 @@
           "--env", "The_Crew",
           "--crew", "TheCrew-small-no_rocket",
           "--num_agents", "4",
+          "--num_hints", "1",
           "--num_tasks", "1",
           "--algo", "mappo",
           "--exp", "check",
@@ -45,7 +46,6 @@
           "--ulimit", "22222",
           "--n_training_threads", "1",
           "--n_rollout_threads", "1",
-          "--num_hints", "0",
           "--num_mini_batch", "1",
           "--episode_length", "100",
           "--num_env_steps", "10000000000000",

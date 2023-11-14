@@ -128,6 +128,7 @@ class CrewEnv(Environment):
 
 
 
+
     def reset(self, choose=True) -> None:
         if choose:
             self.agents = self.possible_agents[:]
@@ -144,11 +145,12 @@ class CrewEnv(Environment):
             # self.current_trick: list[tuple[str, tuple[str, int]]] = []
             self.current_trick: dict[str, tuple[str, int]] = {}
             self.discards = []
-            self.hint_step = self.config['hints'] > 0 # True if next action to be taken is hint, False otherwise
+            # self.hint_step = self.config['hints'] > 0 # True if next action to be taken is hint, False otherwise
+            self.stage_hint_counter = 0 # number of agents given chance to hint this round. When hits num_agents, next action is playing
             self.trick_suit= None
             # TODO: skip the call to step if no hints left. Querying policy when only one action is available is not efficient!
             self.remaining_hints = {agent: self.config['hints'] for agent in self.agents} 
-            self.hinted_card: dict[str, tuple[str, tuple[str, int]]] = {} # agent: (hint_type, card) 
+            self.hinted_cards: dict[str, tuple[str, tuple[str, int]]] = {} # agent: (hint_type, card) 
             for agent in self.agents:
                 self.hands[agent] = []
                 self.tasks[agent] = []
@@ -211,19 +213,28 @@ class CrewEnv(Environment):
         vectorized_trick_suit = np.zeros(len(self.suits))
         if self.trick_suit is not None:
             vectorized_trick_suit[self.suits.index(self.trick_suit)] = 1
+        
+        
+        
         if self.config['hints'] > 0:
             all_hints = []
             for agent in ordered_agents:
                 agent_hints = np.zeros(self.deck_shape()+4) # 3 for type of hint, 1 for hint unused
                 if self.remaining_hints[agent] > 0:
                     agent_hints[-1] = 1
-                elif agent in self.hinted_card.keys():
-                    hint_type, card = self.hinted_card[agent]
+                elif agent in self.hinted_cards.keys():
+                    hint_type, card = self.hinted_cards[agent]
                     agent_hints[self.playing_cards_bidict[card]] = 1
                     agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
-            return np.concatenate([vectorized_hand, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints])
+
+            # which player, relative to current (hinting) player, is leading the trick # TODO: verify this is done correctly
+            # This is done so that the current leader is correctly related to the corresponding hand, tasks, etc in observation.
+            current_leader = (int(agent.split("_")[-1])- self.stage_hint_counter) % len(self.agents)
+            leader = np.zeros(self.config['players'])
+            leader[current_leader] = 1
+            return np.concatenate([vectorized_hand, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints, leader])
         
 
         return np.concatenate([vectorized_hand, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
@@ -231,7 +242,7 @@ class CrewEnv(Environment):
     def get_hints_vector(self, agent):
 
         agent_hints = np.zeros(self.deck_shape()+3)
-        hint_type, card = self.hinted_card[agent]
+        hint_type, card = self.hinted_cards[agent]
         agent_hints[self.playing_cards_bidict[card]] = 1
         agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
 
@@ -244,6 +255,7 @@ class CrewEnv(Environment):
         When using centralized value function, value function takes in entire
         state of the game, not just agent's observation.
         """
+        # TODO: ordering tricks in here SHOULDN'T be used. Order should be objective for shared. 
         ordered_agents = self.ordered_obs_players(self.agent_to_play)
 
         hands = []
@@ -280,24 +292,57 @@ class CrewEnv(Environment):
                 agent_hints = np.zeros(self.deck_shape()+4) # 3 for type of hint, 1 for hint unused
                 if self.remaining_hints[agent] > 0:
                     agent_hints[-1] = 1
-                elif agent in self.hinted_card.keys():
-                    hint_type, card = self.hinted_card[agent]
+                elif agent in self.hinted_cards.keys():
+                    hint_type, card = self.hinted_cards[agent]
                     agent_hints[self.playing_cards_bidict[card]] = 1
                     agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
-            return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints])
+            current_leader = self.agent_selector.current() - self.agent_selector_hint.current() # which player, relative to current (hinting) player, is leading the trick # TODO: verify this is done correctly
+            leader = np.zeros(self.config['players'])
+            leader[current_leader] = 1
+            return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints, leader])
         
         return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
     
 
     def step(self, action):
         """
-        Action is tuple of "play" or "hint" and index of card to play or hint
+        Action is a list of length 1, containing the index of the action. With hints, the index could correspond to a hinting action or a playing action.
+
+        TODO: shared action space.
         """
         action = action[0]
         reward = 0
         done = False
+
+        # hint action
+        if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
+            assert action >= self.deck_shape(), (action, self.deck_shape())
+            player = self.agent_to_hint
+            card = action - self.deck_shape() 
+            self.stage_hint_counter += 1
+            self.agent_to_hint = self.agent_selector_hint.next()
+            if card == self.deck_shape(): # no hint
+                self.agent_to_hint = self.agent_selector_hint.next()
+                obs = self.get_observation(self.agent_to_play)
+                share_obs = self.get_shared_observation()
+                infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
+                available_actions = self.legal_moves(self.agent_to_play)
+                rewards = [[reward]] * self.config['players']
+                return obs, share_obs, rewards, done, infos, available_actions
+            hint_type = self.identify_hint_type(player, self.playing_cards_bidict.inverse[card])
+            self.hinted_cards[player] = (hint_type, self.playing_cards_bidict.inverse[card])
+            self.remaining_hints[player] -= 1
+            obs = self.get_observation(self.agent_to_play)
+            share_obs = self.get_shared_observation()
+            infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
+            available_actions = self.legal_moves(self.agent_to_play)
+            rewards = [[reward]] * self.config['players']
+            return obs, share_obs, rewards, done, infos, available_actions
+
+        assert action < self.deck_shape(), (action, self.deck_shape())
+
         assert self.playing_cards_bidict.inverse[action] in self.hands[self.agent_to_play], (self.playing_cards_bidict.inverse[action], self.hands[self.agent_to_play])
         self.hands[self.agent_to_play].remove(self.playing_cards_bidict.inverse[action])
         if self.trick_suit is None:
@@ -331,16 +376,14 @@ class CrewEnv(Environment):
                         self.tasks[task_owner].remove(card)
                         self.tasks[task_owner].sort()
                         self.tasks_owner.pop(card)
-                        # currently only reward trick_owner(task_owner)
-                        reward += REWARD_MAP["task_complete"]
+
                         # Terminate if all tasks are completed
                         if len(self.tasks_owner.keys()) == 0:
                             reward += REWARD_MAP["win"]
                             done = True
                             break
                     else:
-                        # currently only punish trick_owner(task_owner)
-                        reward += REWARD_MAP["lose"]
+                        reward += REWARD_MAP["lose"] - REWARD_MAP['task_complete'] * (self.config['tasks'] -  len(self.tasks_owner.keys()))
                         # Terminate if task_owner != trick_owner
                         done = True
                         break
@@ -358,6 +401,11 @@ class CrewEnv(Environment):
         # print(infos)
         available_actions = self.legal_moves(self.agent_to_play)
         rewards = [[reward]] * self.config['players']
+        
+        # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
+        # TODO: implement different hinting timings
+        self.stage_hint_counter = 0
+        
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -368,7 +416,8 @@ class CrewEnv(Environment):
         
         # additional 3 for hint type. Note that history of when hints were played is lost!
         if self.config['hints'] > 0:
-            hints = self.config['players'] * (self.deck_shape() + 3) 
+            hints = self.config['players'] * (self.deck_shape() + 4)
+            hints  += self.config['players'] # for trick leader
         else:
             hints = 0
         discards = self.deck_shape()
@@ -388,7 +437,8 @@ class CrewEnv(Environment):
         
         # additional 3 for hint type. Note that history of when hints were played is lost!
         if self.config['hints'] > 0:
-            hints = self.config['players'] * (self.deck_shape() + 3) 
+            hints = self.config['players'] * (self.deck_shape() + 4)
+            hints  += self.config['players'] # for trick leader
         else:
             hints = 0
         discards = self.deck_shape()
@@ -405,7 +455,7 @@ class CrewEnv(Environment):
     #TODO: Different action space for hinting and not (double the action space)
     def action_shape(self):
         if self.config['hints'] > 0:
-            return self.deck_shape() + 1
+            return 2 * self.deck_shape() + 1
         else:
             return self.deck_shape()
         
@@ -417,7 +467,12 @@ class CrewEnv(Environment):
 
 
     def deal_playing_cards(self):
-        to_deal = random.sample(self.playing_cards, len(self.playing_cards))     
+        if self.config["rockets"] == 0:
+            to_deal = random.sample(self.playing_cards, len(self.playing_cards))     
+        else:
+            # deal the highest rocket to first player. Guarantees first player has highest rocket
+            to_deal = random.sample(self.playing_cards[:-1], len(self.playing_cards) - 1)
+            to_deal.insert(0, self.playing_cards[-1]) 
         for card in to_deal:
             agent = self.agent_selector.next()
             self.hands[agent].append(card)
@@ -429,7 +484,7 @@ class CrewEnv(Environment):
         new_order = self.agents[idx:] + self.agents[0:idx]
         self.agent_selector.reinit(new_order)
 
-    # Random for now TODO: rocket based task cards
+    # since player 0 is guaranteed to be commander, this ensures that the commander is always dealt the first task
     def deal_task_cards(self):
         to_deal = random.sample(self.task_cards, self.config["tasks"])     
         for _ in range(len(to_deal)):
@@ -442,9 +497,6 @@ class CrewEnv(Environment):
         playing_cards: list[tuple[str, int]] = []
         task_cards: Deque[tuple[str, int]] = deque()
         # Color Cards & Task Cards
-
-
-
         for suit in ["B", "P", "G", "Y"][: self.config["colors"]]:
             for rank in range(1, self.config["ranks"] + 1):
                 playing_cards.append((suit, rank))
@@ -488,15 +540,18 @@ class CrewEnv(Environment):
         if self.config['hints'] == 0:
             return self.get_action_mask(agent)
 
-        if self.config['unified_action_space']:
-            if self.hint_step:
+        if self.config['unified_action_space']:  # TODO: this
+            if self.stage_hint_counter < len(self.agents):
                 return self.get_hinting_mask(agent)
             else:
                 return np.concatenate(self.get_action_mask(agent), np.zeros(1))
             
-        mask = np.zeros(self.deck_shape(), dtype=np.int8)
-        
-        return self.get_hinting_mask(agent)
+        mask = np.zeros(1+2*self.deck_shape(), dtype=np.int8)
+        if self.stage_hint_counter < len(self.agents):
+            mask[self.deck_shape():] = self.get_hinting_mask(agent)
+        else:
+            mask[:self.deck_shape()] = self.get_action_mask(agent)
+        return mask
 
 
 
@@ -512,9 +567,8 @@ class CrewEnv(Environment):
         if self.agent_selector.is_first() and agent == self.agent_to_play:
             for card in self.hands[self.agent_to_play]:
                 mask[self.playing_cards_bidict[card]] = 1
-            return mask
         # condition 2
-        if (
+        elif (
             self.suit_counters[agent][
                 self.trick_suit
             ]
@@ -522,13 +576,13 @@ class CrewEnv(Environment):
         ):
             for card in self.hands[self.agent_to_play]:
                 mask[self.playing_cards_bidict[card]] = 1
-            return mask
         # condition 1
         elif self.suit_counters[agent][self.trick_suit] > 0:
             for card in self.hands[agent]:
                 if card[0] == self.trick_suit:
                     mask[self.playing_cards_bidict[card]] = 1
-            return mask     
+        assert np.sum(mask) > 0, (mask, self.hands[agent], self.trick_suit, self.suit_counters[agent])
+        return mask
     def get_hinting_mask(self, agent):
         """
         Hints: Can hint if hint is available and card is highest, lowest, or 
@@ -552,3 +606,16 @@ class CrewEnv(Environment):
             elif len(cards) > 1:
                 mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
                 mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
+        return mask
+
+    def identify_hint_type(self, agent, card):
+        suit, _ = card
+        same_suit = [card for card in self.hands[agent] if card[0] == suit]
+        if len(same_suit) == 1:
+            return 'only'
+        if card == max(same_suit, key=lambda card: card[1]):
+            return 'highest'
+        elif card == min(same_suit, key=lambda card: card[1]):
+            return 'lowest'
+        
+        raise ValueError(f"Something went wrong. Card {card} tried to be hinted in hand {self.hands[agent]}")
