@@ -318,10 +318,10 @@ class CrewEnv(Environment):
             assert action >= self.deck_shape(), (action, self.deck_shape())
             player = self.agent_selector_hint.selected_agent
             card = action - self.deck_shape() 
-            if card == self.deck_shape(): # no hint
-                print('no hint by ', player)
-            else:
-                print('hinting ', self.playing_cards_bidict.inverse[card], ' by ', player)
+            # if card == self.deck_shape(): # no hint
+            #     print('no hint by ', player)
+            # else:
+            #     print('hinting ', self.playing_cards_bidict.inverse[card], ' by ', player)
             self.stage_hint_counter += 1
             self.agent_selector_hint.next()
             if card == self.deck_shape(): # no hint
@@ -338,7 +338,7 @@ class CrewEnv(Environment):
             self.hands[self.agent_selector.selected_agent].remove(self.playing_cards_bidict.inverse[action])
             if self.trick_suit is None:
                 self.trick_suit = self.playing_cards_bidict.inverse[action][0]
-            print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
+            # print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
             self.current_trick[self.agent_selector.selected_agent]= self.playing_cards_bidict.inverse[action]
             self.suit_counters[self.agent_selector.selected_agent][self.playing_cards_bidict.inverse[action][0]] -= 1
             self.stage_hint_counter = 0
@@ -363,7 +363,7 @@ class CrewEnv(Environment):
                 for _, card in cur_trick_list:
                     if card in self.tasks_owner.keys():
                         task_owner = self.tasks_owner[card]
-                        print('game over')
+                        # print('game over')
                         if task_owner == trick_owner:
                             self.tasks[task_owner].remove(card)
                             self.tasks[task_owner].sort()
@@ -379,7 +379,7 @@ class CrewEnv(Environment):
                             reward += REWARD_MAP["lose"] - REWARD_MAP['task_complete'] * (self.config['tasks'] -  len(self.tasks_owner.keys()))
                             done = True
                             break
-                print('trick won by ', trick_owner)
+                # print('trick won by ', trick_owner)
                 self.reinit_agents_order(trick_owner)
                 self.trick_suit = None
                 self.current_trick = {}
@@ -399,8 +399,8 @@ class CrewEnv(Environment):
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
-        if done:
-            print('game over', self.config['tasks'] -  len(self.tasks_owner.keys()))
+        # if done:
+        #     print('game over', self.config['tasks'] -  len(self.tasks_owner.keys()))
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -590,7 +590,7 @@ class CrewEnv(Environment):
         """
         mask = np.zeros(self.deck_shape()+1, dtype=np.int8)
         mask[-1] = 1 # action representing no hint
-        print(self.remaining_hints)
+        # print(self.remaining_hints)
         if self.remaining_hints[agent] == 0:
             return mask
 
