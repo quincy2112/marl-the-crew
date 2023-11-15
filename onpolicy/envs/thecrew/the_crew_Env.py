@@ -330,13 +330,6 @@ class CrewEnv(Environment):
                 hint_type = self.identify_hint_type(player, self.playing_cards_bidict.inverse[card])
                 self.hinted_cards[player] = (hint_type, self.playing_cards_bidict.inverse[card])
                 self.remaining_hints[player] -= 1
-            # TODO: make sure on last hint, we're getting observations for right agent. Probably should move this logic to outside ifs
-            # obs = self.get_observation(self.agent_selector_hint.selected_agent)
-            # share_obs = self.get_shared_observation()
-            # infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
-            # available_actions = self.get_legal_moves(self.agent_selector_hint.selected_agent)
-            # rewards = [[reward]] * self.config['players']
-            # return obs, share_obs, rewards, done, infos, available_actions
 
         # play action
         else:
@@ -348,11 +341,11 @@ class CrewEnv(Environment):
             print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
             self.current_trick[self.agent_selector.selected_agent]= self.playing_cards_bidict.inverse[action]
             self.suit_counters[self.agent_selector.selected_agent][self.playing_cards_bidict.inverse[action][0]] -= 1
-            
+            self.stage_hint_counter = 0
+            self.agent_selector.next()
+
             # check if trick is over
-            if self.agent_selector.is_last() and len(self.current_trick.keys()) == len(
-                self.agents
-            ):
+            if len(self.current_trick.keys()) == len(self.agents):
                 trick_suit = self.trick_suit
                 cur_trick_list = list(self.current_trick.items())
                 trick_value = cur_trick_list[0][1][1] # TODO: Could track these two values live, include as observation.
@@ -391,8 +384,6 @@ class CrewEnv(Environment):
                 self.trick_suit = None
                 self.current_trick = {}
 
-                self.stage_hint_counter = 0
-                self.agent_selector.next()
 
 
         if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
@@ -408,7 +399,8 @@ class CrewEnv(Environment):
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
-            
+        if done:
+            print('game over', self.config['tasks'] -  len(self.tasks_owner.keys()))
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -485,7 +477,9 @@ class CrewEnv(Environment):
         idx = self.agents.index(start_agent)
         new_order = self.agents[idx:] + self.agents[0:idx]
         self.agent_selector.reinit(new_order)
+        self.agent_selector.next() # NOTE: Agent selector is really stupid. This is necessary. Why????
         self.agent_selector_hint.reinit(new_order)
+        self.agent_selector_hint.next()
 
     # since player 0 is guaranteed to be commander, this ensures that the commander is always dealt the first task
     def deal_task_cards(self):
@@ -596,6 +590,7 @@ class CrewEnv(Environment):
         """
         mask = np.zeros(self.deck_shape()+1, dtype=np.int8)
         mask[-1] = 1 # action representing no hint
+        print(self.remaining_hints)
         if self.remaining_hints[agent] == 0:
             return mask
 
