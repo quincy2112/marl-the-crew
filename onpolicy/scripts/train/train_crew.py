@@ -72,6 +72,7 @@ def parse_args(args, parser):
     parser.add_argument("--num_agents", type=int, default=4, help="number of players")
     parser.add_argument('--num_tasks', type=int, default=1, help="number of tasks")
     parser.add_argument('--num_hints', type=int, default=0, help="number of hints. 0 or 1")
+    parser.add_argument('--log', action= "store_true",  default=False,  help="whether to log to console")
     parser.add_argument('--run_name', type=str, default="", help="name of run for wandb")
     parser.add_argument('--unified_action_space', action= "store_true", default=False, help="Whether to use a unified action space for hints and plays. Default: False")
     all_args = parser.parse_known_args(args)[0]
@@ -189,6 +190,7 @@ def main(args):
         "device": device,
         "run_dir": run_dir,
         "hints": hints,
+        "log": all_args.log
     }
 
     # run experiments

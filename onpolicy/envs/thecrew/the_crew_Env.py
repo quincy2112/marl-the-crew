@@ -6,7 +6,7 @@ from bidict import bidict
 import random
 from collections import Counter, deque, defaultdict
 
-#TODO: remove pettingzoo rec, factor out agent_selector
+#TODO: remove pettingzoo req, factor out agent_selector
 from pettingzoo.utils import agent_selector
 
 REWARD_MAP = {
@@ -108,6 +108,7 @@ class CrewEnv(Environment):
             }
         else:
             raise ValueError("Unknown environment name: " + args.crew_name)
+        self.log = args.log
         config['hints'] = args.num_hints 
         config['tasks'] = args.num_tasks
         config['unified_action_space'] = args.unified_action_space
@@ -306,9 +307,9 @@ class CrewEnv(Environment):
     def step(self, action):
         """
         Action is a list of length 1, containing the index of the action. With hints, the index could correspond to a hinting action or a playing action.
-
-        TODO: shared action space.
         """
+        if self.log:
+            self.render()
         action = action[0]
         reward = 0
         done = False
@@ -341,7 +342,6 @@ class CrewEnv(Environment):
             # print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
             self.current_trick[self.agent_selector.selected_agent]= self.playing_cards_bidict.inverse[action]
             self.suit_counters[self.agent_selector.selected_agent][self.playing_cards_bidict.inverse[action][0]] -= 1
-            self.stage_hint_counter = 0
             self.agent_selector.next()
 
             # check if trick is over
@@ -381,8 +381,11 @@ class CrewEnv(Environment):
                             break
                 # print('trick won by ', trick_owner)
                 self.reinit_agents_order(trick_owner)
+                self.reinit_agents_order(trick_owner)
+                self.discards += list(self.current_trick.values())
                 self.trick_suit = None
                 self.current_trick = {}
+                self.stage_hint_counter = 0
 
 
 
@@ -399,8 +402,8 @@ class CrewEnv(Environment):
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
-        # if done:
-        #     print('game over', self.config['tasks'] -  len(self.tasks_owner.keys()))
+        if done and self.log:
+            print('GAME OVER', self.config['tasks'] -  len(self.tasks_owner.keys()), '\n\n\n\n\n\n\n\n\n\n\n')
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -481,6 +484,7 @@ class CrewEnv(Environment):
         self.agent_selector_hint.reinit(new_order)
         self.agent_selector_hint.next()
 
+
     # since player 0 is guaranteed to be commander, this ensures that the commander is always dealt the first task
     def deal_task_cards(self):
         to_deal = random.sample(self.task_cards, self.config["tasks"])     
@@ -550,7 +554,22 @@ class CrewEnv(Environment):
             mask[:self.deck_shape()] = self.get_action_mask(agent)
         return mask
 
-
+    def render(self):
+        print("Current Trick: ", self.current_trick)
+        for agent, hand in self.hands.items():
+            print(f"{agent}: {hand}")
+        # for agent, tasks in self.tasks.items():
+        #     print(f"{agent}: {tasks}")
+        print("Current Discards: ", self.discards)
+        print("Current Trick Suit: ", self.trick_suit)
+        print("Current Tasks Owner: ", self.tasks_owner)
+        # print("Current Suit Counters: ", self.suit_counters)
+        print("Current Remaining Hints: ", self.remaining_hints)
+        print("Current Hinted Cards: ", self.hinted_cards)
+        print("Current Agent Selector: ", self.agent_selector.selected_agent)
+        print("Current Agent Selector Hint: ", self.agent_selector_hint.selected_agent)
+        print("Current Stage Hint Counter: ", self.stage_hint_counter)
+        print("\n\n")
 
     def get_action_mask(self, agent):
         """

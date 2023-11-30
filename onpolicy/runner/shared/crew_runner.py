@@ -19,7 +19,7 @@ class CrewRunner(Runner):
     def __init__(self, config):
         super(CrewRunner, self).__init__(config)
         self.true_total_num_steps = 0
-
+        self.log = config['log']
     def run(self):
         self.turn_obs = np.zeros(
             (self.n_rollout_threads, *self.buffer.obs.shape[2:]), dtype=np.float32
@@ -224,7 +224,7 @@ class CrewRunner(Runner):
             self.turn_rnn_states_critic[choose, current_agent_id] = _t2n(
                 rnn_state_critic
             )
-
+            
             obs, share_obs, rewards, dones, infos, available_actions = self.envs.step(
                 env_actions
             )
