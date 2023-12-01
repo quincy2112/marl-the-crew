@@ -112,6 +112,7 @@ class CrewEnv(Environment):
         config['hints'] = args.num_hints 
         config['tasks'] = args.num_tasks
         config['unified_action_space'] = args.unified_action_space
+        config['bidirectional_rep'] = args.use_bidirectional_rep
         self.config = config
         self.playing_cards, self.task_cards = self.generateAllCards()
         self.possible_agents: list[str] = [f"player_{i}" for i in range(self.config['players'])]
@@ -126,7 +127,6 @@ class CrewEnv(Environment):
             self.share_observation_space.append(
                 [self.shared_observation_shape()]
             )
-
 
 
 
@@ -173,10 +173,19 @@ class CrewEnv(Environment):
             
             # TODO: current turn as feature. For hints
 
-            # current agent to hint next
             self.agent_selector_hint.reset()
 
+            
+            if self.config['bidirectional_rep']:
+                self.card_to_bidir_reps_high_to_low = {}
+                self.card_to_bidir_reps_low_to_high = {}
 
+                for suit in self.suits:
+                    self.card_to_bidir_reps_low_to_high[suit] = np.arange(self.config['ranks'])
+                    self.card_to_bidir_reps_high_to_low[suit] = np.arange(self.config['ranks'])[::-1]
+                pass    
+
+            # current agent to hint next
             obs = self.get_observation(self.agent_selector.selected_agent)
             share_obs = self.get_shared_observation()
             available_actions = self.get_legal_moves(self.agent_selector.selected_agent)
@@ -189,11 +198,12 @@ class CrewEnv(Environment):
     
         return obs, share_obs, available_actions
     
+
+
     def get_observation(self, agent):
         hand = [self.playing_cards_bidict[card] for card in self.hands[agent]]
         vectorized_hand = np.zeros(self.deck_shape())
         vectorized_hand[hand] = 1
-
         discards = [self.playing_cards_bidict[card] for card in self.discards]
         vectorized_discards = np.zeros(self.deck_shape())
         vectorized_discards[discards] = 1
@@ -383,6 +393,13 @@ class CrewEnv(Environment):
                 self.reinit_agents_order(trick_owner)
                 self.reinit_agents_order(trick_owner)
                 self.discards += list(self.current_trick.values())
+                if self.config['bidirectional_rep']:
+                    for suit, rank in self.current_trick.values():
+                        rank -=1 # rank is 1 indexed
+                        if suit != 'R': # TODO: Instead of maintaining both, maintain one and reverse to create the other.
+                            self.card_to_bidir_reps_low_to_high[suit][rank:] -= 1 # low to high
+                            self.card_to_bidir_reps_high_to_low[suit][:rank] -= 1 # high to low
+                            pass
                 self.trick_suit = None
                 self.current_trick = {}
                 self.stage_hint_counter = 0
@@ -427,6 +444,12 @@ class CrewEnv(Environment):
 
 
         trick_suit = len(self.suits)
+
+
+        # no more discards, double all other card reps
+        # if self.config['bidirectional_rep']:
+        #     return 2 * hands + 2 * current_trick + 2 * tasks + 2 * hints + trick_suit
+        
         return hands + discards + current_trick + tasks + hints + trick_suit
 
     def observation_shape(self):
@@ -446,6 +469,11 @@ class CrewEnv(Environment):
 
         trick_suit = len(self.suits)
 
+        # no more discards, double all other card reps
+        # if self.config['bidirectional_rep']:
+        #     return 2 * hand + 2 * current_trick + 2 * tasks + 2 * hints + trick_suit
+        
+        #TODO: feature for commander. 
         return hand + discards + current_trick + tasks + hints + trick_suit
     
 
@@ -518,6 +546,20 @@ class CrewEnv(Environment):
 
         return playing_cards, task_cards
     
+    def cardlist_to_vector(self, cards):
+        """
+        Converts list of cards to vector representation. Used for tasks and hands.
+        
+        Works with both normal and bidir rep.
+        """
+        if self.config['bidirectional_rep']:
+            raise NotImplementedError
+        vector = np.zeros(self.deck_shape())
+        for card in cards:
+            vector[self.playing_cards_bidict[card]] = 1
+        return vector
+
+
     def ordered_obs_players(self, agent):
         """
         Returns list of players in order from current player clockwise.
@@ -641,3 +683,24 @@ class CrewEnv(Environment):
         except:
             pass
         raise ValueError(f"Something went wrong. Card {card} tried to be hinted in hand {self.hands[agent]}")
+    
+
+    def get_bidir_bidicts(self):
+        """
+        Equivalent to playing_cards_bidict, but for bidirectional representations.
+        Creates the bidicts as needed. That way, we can use self.card_to_bidir_reps_low_to_high
+        and self.card_to_bidir_reps_high_to_low which are easier to track for debugging.
+
+        Returns low_to_high, high_to_low bidicts.
+        """
+        low_to_high = bidict()
+        high_to_low = bidict()
+        suit_count = 0
+        for suit in self.suits:
+            for rank in range(1, self.config['ranks']+1):
+                if (suit, rank) in self.discards:
+                    continue
+                low_to_high[(suit, rank)] = self.card_to_bidir_reps_low_to_high[suit][rank-1] + suit_count * self.config['ranks']
+                high_to_low[(suit, rank)] =  self.card_to_bidir_reps_high_to_low[suit][rank-1] + suit_count * self.config['ranks'] + self.config['ranks'] * self.config['colors']
+            suit_count += 1
+        return low_to_high, high_to_low
