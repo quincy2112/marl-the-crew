@@ -9,6 +9,8 @@ from collections import Counter, deque, defaultdict
 #TODO: remove pettingzoo req, factor out agent_selector
 from pettingzoo.utils import agent_selector
 
+# TODO: train with multiple configurations.
+
 REWARD_MAP = {
     "task_complete": 1,
     "win": 10,
@@ -171,7 +173,6 @@ class CrewEnv(Environment):
             #current agent to play next
             self.agent_selector.reset()
             
-            # TODO: current turn as feature. For hints
 
             self.agent_selector_hint.reset()
 
@@ -201,31 +202,34 @@ class CrewEnv(Environment):
 
 
     def get_observation(self, agent):
-        hand = [self.playing_cards_bidict[card] for card in self.hands[agent]]
-        vectorized_hand = np.zeros(self.deck_shape())
-        vectorized_hand[hand] = 1
-        discards = [self.playing_cards_bidict[card] for card in self.discards]
-        vectorized_discards = np.zeros(self.deck_shape())
-        vectorized_discards[discards] = 1
-
-        vectorized_current_trick = np.zeros(self.config['players'] * self.deck_shape())
-        ordered_agents = self.ordered_obs_players(agent)
-        for agent in ordered_agents:
-            if agent not in self.current_trick:
-                continue
-            card = self.current_trick[agent]
-            vectorized_current_trick[self.agents.index(agent) * self.deck_shape() + self.playing_cards_bidict[card]] = 1
         
-        vectorized_tasks = np.zeros(self.config['players'] * self.deck_shape())
+        # orders based on current agent, meaning agent_to_hint or agent_to_play
+        ordered_agents = self.ordered_obs_players(agent)
+        
+        vectorized_hand = self.cardlist_to_vector(self.hands[agent])
+        cumulative_vector = vectorized_hand
+
+        if not self.config['bidirectional_rep']:
+            vectorized_discards = self.cardlist_to_vector(self.discards)
+            cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
+
+        current_trick = []
         for agent in ordered_agents:
-            for task in self.tasks[agent]:
-                vectorized_tasks[self.agents.index(agent) * self.deck_shape() + self.task_cards_bidict[task]] = 1
+            current_trick.append(self.cardlist_to_vector([self.current_trick[agent]] if agent in self.current_trick else []))
+        vectorized_current_trick = np.concatenate(current_trick)
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_current_trick])
+
+        tasks = []
+        for agent in ordered_agents:
+            tasks.append(self.cardlist_to_vector(self.tasks[agent]))
+        vectorized_tasks = np.concatenate(tasks)
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_tasks])
+
         vectorized_trick_suit = np.zeros(len(self.suits))
         if self.trick_suit is not None:
             vectorized_trick_suit[self.suits.index(self.trick_suit)] = 1
-        
-        
-        
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_trick_suit])
+
         if self.config['hints'] > 0:
             all_hints = []
             for agent in ordered_agents:
@@ -234,20 +238,18 @@ class CrewEnv(Environment):
                     agent_hints[-1] = 1
                 elif agent in self.hinted_cards.keys():
                     hint_type, card = self.hinted_cards[agent]
-                    agent_hints[self.playing_cards_bidict[card]] = 1
+                    agent_hints[:-4] = self.cardlist_to_vector([card])
                     agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
 
-            # which player, relative to current (hinting) player, is leading the trick # TODO: verify this is done correctly
+            # which player, relative to current (hinting) player, is leading the trick 
             # This is done so that the current leader is correctly related to the corresponding hand, tasks, etc in observation.
-            current_leader = (int(agent.split("_")[-1])- self.stage_hint_counter) % len(self.agents)
-            leader = np.zeros(self.config['players'])
-            leader[current_leader] = 1
-            return np.concatenate([vectorized_hand, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints, leader])
-        
+            leader_vec = np.zeros(self.config['players'])
+            leader_vec[ordered_agents.index(self.agent_selector.selected_agent)] = 1
+            cumulative_vector = np.concatenate([cumulative_vector, hints, leader_vec])        
 
-        return np.concatenate([vectorized_hand, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
+        return cumulative_vector
     
     def get_hints_vector(self, agent):
 
@@ -265,36 +267,38 @@ class CrewEnv(Environment):
         When using centralized value function, value function takes in entire
         state of the game, not just agent's observation.
         """
-        # TODO: ordering tricks in here SHOULDN'T be used. Order should be objective for shared. 
+        
         ordered_agents = self.ordered_obs_players(self.agent_selector.selected_agent)
 
-        hands = []
-        for agent in ordered_agents:
-            hands += [self.playing_cards_bidict[card] + self.deck_shape() * int(agent.split('_')[-1]) for card in self.hands[agent]]
-        vectorized_hands = np.zeros(self.config['players'] * self.deck_shape())
-        vectorized_hands[hands] = 1
-        
-        discards = [self.playing_cards_bidict[card] for card in self.discards]
-        vectorized_discards = np.zeros(self.deck_shape())
-        vectorized_discards[discards] = 1
 
-        vectorized_current_trick = np.zeros(self.config['players'] * self.deck_shape())
-        for agent in ordered_agents:
-            if agent not in self.current_trick:
-                continue
-            card = self.current_trick[agent]
-            vectorized_current_trick[self.agents.index(agent) * self.deck_shape() + self.playing_cards_bidict[card]] = 1
-        
-        vectorized_tasks = np.zeros(self.config['players'] * self.deck_shape())
-        for agent in ordered_agents:
-            for task in self.tasks[agent]:
-                vectorized_tasks[self.agents.index(agent) * self.deck_shape() + self.task_cards_bidict[task]] = 1
+        vectorized_hands = np.concatenate([self.cardlist_to_vector(self.hands[agent]) for agent in ordered_agents])
 
+        cumulative_vector = vectorized_hands
+
+        if not self.config['bidirectional_rep']:
+            discards = [self.playing_cards_bidict[card] for card in self.discards]
+            vectorized_discards = np.zeros(self.deck_shape())
+            vectorized_discards[discards] = 1
+            cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
+
+
+        current_trick = []
+        for agent in ordered_agents:
+            current_trick.append(self.cardlist_to_vector([self.current_trick[agent]] if agent in self.current_trick else []))
+        vectorized_current_trick = np.concatenate(current_trick)
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_current_trick])
+
+        tasks = []
+        for agent in ordered_agents:
+            tasks.append(self.cardlist_to_vector(self.tasks[agent]))
+
+        vectorized_tasks = np.concatenate(tasks)
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_tasks])
         vectorized_trick_suit = np.zeros(len(self.suits))
 
         if self.trick_suit is not None:
             vectorized_trick_suit[self.suits.index(self.trick_suit)] = 1
-
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_trick_suit])
 
         if self.config['hints'] > 0:
             all_hints = []
@@ -304,14 +308,17 @@ class CrewEnv(Environment):
                     agent_hints[-1] = 1
                 elif agent in self.hinted_cards.keys():
                     hint_type, card = self.hinted_cards[agent]
-                    agent_hints[self.playing_cards_bidict[card]] = 1
+                    agent_hints[:-4] = self.cardlist_to_vector([card])
                     agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
-            # NOTE: shared obs is based on agent to play, NOT agent to hint. Therefore, current leader not tracked in shared obs.
-            return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit, hints])
-        
-        return np.concatenate([vectorized_hands, vectorized_discards, vectorized_current_trick, vectorized_tasks, vectorized_trick_suit])
+            # which player, relative to current (hinting) player, is leading the trick 
+            # This is done so that the current leader is correctly related to the corresponding hand, tasks, etc in observation.
+            leader_vec = np.zeros(self.config['players'])
+            leader_vec[ordered_agents.index(self.agent_selector.selected_agent)] = 1
+            cumulative_vector = np.concatenate([cumulative_vector, hints, leader_vec])              
+  
+        return cumulative_vector
     
 
     def step(self, action):
@@ -325,7 +332,7 @@ class CrewEnv(Environment):
         done = False
 
         # hint action
-        if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents): # TODO TODO TODO: agent to hint not bumping or not being used!
+        if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
             assert action >= self.deck_shape(), (action, self.deck_shape())
             player = self.agent_selector_hint.selected_agent
             card = action - self.deck_shape() 
@@ -396,7 +403,7 @@ class CrewEnv(Environment):
                 if self.config['bidirectional_rep']:
                     for suit, rank in self.current_trick.values():
                         rank -=1 # rank is 1 indexed
-                        if suit != 'R': # TODO: Instead of maintaining both, maintain one and reverse to create the other.
+                        if suit != 'R': # TODO: Instead of maintaining both, maintain one and reverse to create the other? More efficient. Do we care?
                             self.card_to_bidir_reps_low_to_high[suit][rank:] -= 1 # low to high
                             self.card_to_bidir_reps_high_to_low[suit][:rank] -= 1 # high to low
                             pass
@@ -420,7 +427,7 @@ class CrewEnv(Environment):
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
         if done and self.log:
-            print('GAME OVER', self.config['tasks'] -  len(self.tasks_owner.keys()), '\n\n\n\n\n\n\n\n\n\n\n')
+            print('GAME OVER. Tasks remaining: ', self.config['tasks'] -  len(self.tasks_owner.keys()), '\n\n\n\n\n\n\n\n\n\n\n')
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -432,6 +439,7 @@ class CrewEnv(Environment):
         # additional 3 for hint type. Note that history of when hints were played is lost!
         if self.config['hints'] > 0:
             hints = self.config['players'] * (self.deck_shape() + 4)
+            hints  += self.config['players'] # for trick leader
         else:
             hints = 0
         discards = self.deck_shape()
