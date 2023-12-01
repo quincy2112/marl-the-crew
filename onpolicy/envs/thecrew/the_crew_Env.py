@@ -270,10 +270,10 @@ class CrewEnv(Environment):
 
         hands = []
         for agent in ordered_agents:
-            hands += [self.playing_cards_bidict[card] for card in self.hands[agent]]
+            hands += [self.playing_cards_bidict[card] + self.deck_shape() * int(agent.split('_')[-1]) for card in self.hands[agent]]
         vectorized_hands = np.zeros(self.config['players'] * self.deck_shape())
         vectorized_hands[hands] = 1
-
+        
         discards = [self.playing_cards_bidict[card] for card in self.discards]
         vectorized_discards = np.zeros(self.deck_shape())
         vectorized_discards[discards] = 1
@@ -554,9 +554,10 @@ class CrewEnv(Environment):
         """
         if self.config['bidirectional_rep']:
             raise NotImplementedError
-        vector = np.zeros(self.deck_shape())
-        for card in cards:
-            vector[self.playing_cards_bidict[card]] = 1
+        else:
+            vector = np.zeros(self.deck_shape())
+            for card in cards:
+                vector[self.playing_cards_bidict[card]] = 1
         return vector
 
 
