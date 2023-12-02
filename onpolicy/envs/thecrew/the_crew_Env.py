@@ -123,13 +123,15 @@ class CrewEnv(Environment):
         self.action_space = []
         self.observation_space = []
         self.share_observation_space = []
+        self.observation_shape = self.get_observation_shape()
+        self.shared_observation_shape = self.get_shared_observation_shape()
         for _ in range(self.config['players']):
             self.action_space.append(Discrete(self.action_shape()))
             self.observation_space.append(
-                [self.observation_shape()]
+                [self.observation_shape]
             )
             self.share_observation_space.append(
-                [self.shared_observation_shape()]
+                [self.shared_observation_shape]
             )
 
 
@@ -193,9 +195,9 @@ class CrewEnv(Environment):
             share_obs = self.get_shared_observation()
             available_actions = self.get_legal_moves(self.agent_selector.selected_agent)
         else:
-            obs = np.zeros(self.observation_shape())
+            obs = np.zeros(self.observation_shape)
             share_obs = np.zeros(
-                self.shared_observation_shape()
+                self.shared_observation_shape
             )
             available_actions = np.zeros(self.action_shape())
     
@@ -461,7 +463,7 @@ class CrewEnv(Environment):
         else:
             return self.deck_shape()
         
-    def shared_observation_shape(self):
+    def get_shared_observation_shape(self):
         total = 0
 
         hands = self.config['players'] * self.card_repr_shape()
@@ -494,7 +496,7 @@ class CrewEnv(Environment):
 
         return total
 
-    def observation_shape(self):
+    def get_observation_shape(self):
         total = 0
 
         hand = self.card_repr_shape()
@@ -651,11 +653,11 @@ class CrewEnv(Environment):
         if self.config['hints'] == 0:
             return self.get_action_mask(agent)
 
-        if self.config['unified_action_space']:  # TODO: this
-            if self.stage_hint_counter < len(self.agents):
-                return self.get_hinting_mask(agent)
-            else:
-                return np.concatenate(self.get_action_mask(agent), np.zeros(1))
+        # if self.config['unified_action_space']:  # TODO: this
+        #     if self.stage_hint_counter < len(self.agents):
+        #         return self.get_hinting_mask(agent)
+        #     else:
+        #         return np.concatenate(self.get_action_mask(agent), np.zeros(1))
             
         mask = np.zeros(1+2*self.deck_shape(), dtype=np.int8)
         if self.stage_hint_counter < len(self.agents):
