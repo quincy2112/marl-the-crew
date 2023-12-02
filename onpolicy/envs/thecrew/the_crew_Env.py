@@ -10,8 +10,6 @@ from pettingzoo.utils import agent_selector
 
 # TODO: train with multiple configurations.
 
-# TODO: skip hint representation by updating hint counter in step
-# TODO: bidirectional mask, update get_legal_moves and get_hinting_mask
 REWARD_MAP = {
     "task_complete": 1,
     "win": 10,
@@ -378,7 +376,6 @@ class CrewEnv(Environment):
             self.hands[player].remove(card)
             if self.trick_suit is None:
                 self.trick_suit = card[0]
-            # print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
             self.current_trick[player]= card
             self.suit_counters[player][card[0]] -= 1
             self.agent_selector.next()
@@ -433,12 +430,22 @@ class CrewEnv(Environment):
                 self.current_trick = {}
                 self.stage_hint_counter = 0
 
-
+        # if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
+        #     next_agent = self.agent_selector_hint.selected_agent
+        # else:
+        #     next_agent = self.agent_selector.selected_agent
 
         if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
             next_agent = self.agent_selector_hint.selected_agent
-        else:
+            while self.remaining_hints[next_agent] == 0 and self.stage_hint_counter < len(self.agents):
+                self.agent_selector_hint.next()
+                next_agent = self.agent_selector_hint.selected_agent
+                self.stage_hint_counter += 1
+
+        if self.config['hints'] == 0 or self.stage_hint_counter == len(self.agents):
             next_agent = self.agent_selector.selected_agent
+
+
         obs = self.get_observation(next_agent)
         share_obs = self.get_shared_observation()
         infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
@@ -723,12 +730,9 @@ class CrewEnv(Environment):
 
         for _, cards in bucketed_cards.items():
             if len(cards) == 1:
-                # mask[self.playing_cards_bidict[cards[0]]] = 1
                 indices = self.cardlist_to_vector([cards[0]])
                 mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
             elif len(cards) > 1:
-                # mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
-                # mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
                 indices = self.cardlist_to_vector([max(cards, key=lambda card: card[1])])
                 mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
                 indices = self.cardlist_to_vector([min(cards, key=lambda card: card[1])])
