@@ -6,13 +6,12 @@ from bidict import bidict
 import random
 from collections import Counter, deque, defaultdict
 
-#TODO: remove pettingzoo req, factor out agent_selector
 from pettingzoo.utils import agent_selector
 
 # TODO: train with multiple configurations.
 
 # TODO: skip hint representation by updating hint counter in step
-
+# TODO: bidirectional mask, update get_legal_moves and get_hinting_mask
 REWARD_MAP = {
     "task_complete": 1,
     "win": 10,
@@ -356,32 +355,32 @@ class CrewEnv(Environment):
 
         # hint action
         if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
-            assert action >= self.deck_shape(), (action, self.deck_shape())
+            assert action >= self.card_repr_shape(), (action, self.card_repr_shape())
             player = self.agent_selector_hint.selected_agent
-            card = action - self.deck_shape() 
-            # if card == self.deck_shape(): # no hint
-            #     print('no hint by ', player)
-            # else:
-            #     print('hinting ', self.playing_cards_bidict.inverse[card], ' by ', player)
+            card_index = action - self.card_repr_shape() 
+
+            if card_index != self.card_repr_shape(): # if "no hint" not chosen
+                card = self.index_to_card(card_index)
+                hint_type = self.identify_hint_type(player,card)
+                self.hinted_cards[player] = (hint_type, card)
+                self.remaining_hints[player] -= 1
+
             self.stage_hint_counter += 1
             self.agent_selector_hint.next()
-            if card == self.deck_shape(): # no hint
-                obs = self.get_observation(self.agent_selector.selected_agent)
-            else:
-                hint_type = self.identify_hint_type(player, self.playing_cards_bidict.inverse[card])
-                self.hinted_cards[player] = (hint_type, self.playing_cards_bidict.inverse[card])
-                self.remaining_hints[player] -= 1
 
         # play action
         else:
-            assert action < self.deck_shape(), (action, self.deck_shape())
-            assert self.playing_cards_bidict.inverse[action] in self.hands[self.agent_selector.selected_agent], (self.playing_cards_bidict.inverse[action], self.hands[self.agent_selector.selected_agent])
-            self.hands[self.agent_selector.selected_agent].remove(self.playing_cards_bidict.inverse[action])
+            assert action < self.card_repr_shape(), (action, self.card_repr_shape())
+            player = self.agent_selector.selected_agent
+            card = self.index_to_card(action)
+
+            assert card in self.hands[player], (card, self.hands[player])
+            self.hands[player].remove(card)
             if self.trick_suit is None:
-                self.trick_suit = self.playing_cards_bidict.inverse[action][0]
+                self.trick_suit = card[0]
             # print('playing ', self.playing_cards_bidict.inverse[action], ' by ', self.agent_selector.selected_agent)
-            self.current_trick[self.agent_selector.selected_agent]= self.playing_cards_bidict.inverse[action]
-            self.suit_counters[self.agent_selector.selected_agent][self.playing_cards_bidict.inverse[action][0]] -= 1
+            self.current_trick[player]= card
+            self.suit_counters[player][card[0]] -= 1
             self.agent_selector.next()
 
             # check if trick is over
@@ -537,9 +536,9 @@ class CrewEnv(Environment):
     
     def action_shape(self):
         if self.config['hints'] > 0:
-            return 2 * self.deck_shape() + 1
+            return 2 * self.card_repr_shape() + 1
         else:
-            return self.deck_shape()
+            return self.card_repr_shape()
         
     def seed(self, seed=None):
         if seed is None:
@@ -628,7 +627,7 @@ class CrewEnv(Environment):
             vector = np.zeros(self.deck_shape())
             for card in cards:
                 vector[self.playing_cards_bidict[card]] = 1
-        return vector
+        return vector.astype(int)
 
 
     def ordered_obs_players(self, agent):
@@ -653,17 +652,11 @@ class CrewEnv(Environment):
         if self.config['hints'] == 0:
             return self.get_action_mask(agent)
 
-        # if self.config['unified_action_space']:  # TODO: this
-        #     if self.stage_hint_counter < len(self.agents):
-        #         return self.get_hinting_mask(agent)
-        #     else:
-        #         return np.concatenate(self.get_action_mask(agent), np.zeros(1))
-            
-        mask = np.zeros(1+2*self.deck_shape(), dtype=np.int8)
+        mask = np.zeros(1+2*self.card_repr_shape(), dtype=np.int8)
         if self.stage_hint_counter < len(self.agents):
-            mask[self.deck_shape():] = self.get_hinting_mask(agent)
+            mask[self.card_repr_shape():] = self.get_hinting_mask(agent)
         else:
-            mask[:self.deck_shape()] = self.get_action_mask(agent)
+            mask[:self.card_repr_shape()] = self.get_action_mask(agent)
         return mask
 
     def render(self):
@@ -690,12 +683,11 @@ class CrewEnv(Environment):
         2. if trick_basecard exist, play any card if player don't have cards with color same as the trick_basecard
         3. if trick_basecard not exist(first player in turn), play any cards
         """
-        mask = np.zeros(self.deck_shape(), dtype=np.int8)
+
         # condition 3
         # if self.agent_selector.is_first():
         if len(self.current_trick.keys()) == 0:
-            for card in self.hands[agent]:
-                mask[self.playing_cards_bidict[card]] = 1
+            mask = self.cardlist_to_vector(self.hands[agent])
         # condition 2
         elif (
             self.suit_counters[agent][
@@ -703,26 +695,23 @@ class CrewEnv(Environment):
             ]
             == 0
         ):
-            for card in self.hands[agent]:
-                mask[self.playing_cards_bidict[card]] = 1
+            mask = self.cardlist_to_vector(self.hands[agent])
         # condition 1
         elif self.suit_counters[agent][self.trick_suit] > 0:
-            for card in self.hands[agent]:
-                if card[0] == self.trick_suit:
-                    mask[self.playing_cards_bidict[card]] = 1
+            mask = self.cardlist_to_vector([card for card in self.hands[agent] if card[0] == self.trick_suit])
 
-        # this assert can break if the game is over. We would be resetting the env before the agent has a chance to play.
-        # assert np.sum(mask) > 0, (mask, self.hands[agent], self.trick_suit, self.suit_counters[agent])
+
         return mask
+    
     def get_hinting_mask(self, agent):
         """
         Hints: Can hint if hint is available and card is highest, lowest, or 
         only card of that suit in hand. No rockets
         """
-        mask = np.zeros(self.deck_shape()+1, dtype=np.int8)
+        mask = np.zeros(self.card_repr_shape()+1, dtype=np.int8)
         mask[-1] = 1 # action representing no hint
-        # print(self.remaining_hints)
         if self.remaining_hints[agent] == 0:
+            #TODO: assert false here when hint skipping completed
             return mask
 
         # TODO: more efficient method?
@@ -734,10 +723,16 @@ class CrewEnv(Environment):
 
         for _, cards in bucketed_cards.items():
             if len(cards) == 1:
-                mask[self.playing_cards_bidict[cards[0]]] = 1
+                # mask[self.playing_cards_bidict[cards[0]]] = 1
+                indices = self.cardlist_to_vector([cards[0]])
+                mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
             elif len(cards) > 1:
-                mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
-                mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
+                # mask[self.playing_cards_bidict[max(cards, key=lambda card: card[1])]] = 1
+                # mask[self.playing_cards_bidict[min(cards, key=lambda card: card[1])]] = 1
+                indices = self.cardlist_to_vector([max(cards, key=lambda card: card[1])])
+                mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
+                indices = self.cardlist_to_vector([min(cards, key=lambda card: card[1])])
+                mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
         return mask
 
     def identify_hint_type(self, agent, card):
@@ -767,6 +762,8 @@ class CrewEnv(Environment):
         high_to_low = bidict()
         suit_count = 0
         for suit in self.suits:
+            if suit == "R":
+                continue
             for rank in range(1, self.config['ranks']+1):
                 if (suit, rank) in self.discards:
                     continue
@@ -774,3 +771,15 @@ class CrewEnv(Environment):
                 high_to_low[(suit, rank)] =  self.card_to_bidir_reps_high_to_low[suit][rank-1] + suit_count * self.config['ranks'] + self.config['ranks'] * self.config['colors']
             suit_count += 1
         return low_to_high, high_to_low
+
+    def index_to_card(self, index):
+        if self.config['bidirectional_rep']:
+            low_to_high, high_to_low = self.get_bidir_bidicts()
+            if index < self.config['ranks'] * self.config['colors']:
+                return low_to_high.inverse[index]
+            elif index < 2 * self.config['ranks'] * self.config['colors']:
+                return high_to_low.inverse[index]
+            else:
+                return ('R', int(index - 2 * self.config['ranks'] * self.config['colors'] + 1))
+        else:
+            return self.playing_cards_bidict.inverse[index]

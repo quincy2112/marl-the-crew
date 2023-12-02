@@ -18,6 +18,6 @@ do
     CUDA_VISIBLE_DEVICES=0 python train/train_crew.py --env_name ${env} --algorithm_name ${algo} --experiment_name ${exp} \
     --crew_name ${crew} --num_agents ${num_agents} --num_tasks ${num_tasks} --num_hints ${num_hints} --seed ${seed} --n_training_threads 1 --n_rollout_threads 100 \
     --num_mini_batch 1 --episode_length 100 --num_env_steps 10000000000000 --ppo_epoch 15 --gamma 1 \
-    --gain 0.01 --lr 7e-4 --critic_lr 1e-3 --hidden_size 512 --layer_N 2 --entropy_coef 0.015 --run_name full_game
+    --gain 0.01 --lr 7e-4 --critic_lr 1e-3 --hidden_size 512 --layer_N 2 --entropy_coef 0.015 --run_name full_game_bidir --use_bidirectional_rep 
     echo "training is done!"
 done
