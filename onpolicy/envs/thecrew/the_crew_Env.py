@@ -11,6 +11,8 @@ from pettingzoo.utils import agent_selector
 
 # TODO: train with multiple configurations.
 
+# TODO: skip hint representation by updating hint counter in step
+
 REWARD_MAP = {
     "task_complete": 1,
     "win": 10,
@@ -151,7 +153,7 @@ class CrewEnv(Environment):
             # self.hint_step = self.config['hints'] > 0 # True if next action to be taken is hint, False otherwise
             self.stage_hint_counter = 0 # number of agents given chance to hint this round. When hits num_agents, next action is playing
             self.trick_suit= None
-            # TODO: skip the call to step if no hints left. Querying policy when only one action is available is not efficient!
+
             self.remaining_hints = {agent: self.config['hints'] for agent in self.agents} 
             self.hinted_cards: dict[str, tuple[str, tuple[str, int]]] = {} # agent: (hint_type, card) 
             for agent in self.agents:
@@ -209,9 +211,14 @@ class CrewEnv(Environment):
         vectorized_hand = self.cardlist_to_vector(self.hands[agent])
         cumulative_vector = vectorized_hand
 
-        if not self.config['bidirectional_rep']:
+        if self.config['bidirectional_rep']:
+            vectorized_discards = np.zeros(self.config['rockets'])
+            for suit, rank in self.discards: # TODO: optimize by tracking discarded rockets
+                if suit == 'R':
+                    vectorized_discards[rank-1] = 1
+        else:
             vectorized_discards = self.cardlist_to_vector(self.discards)
-            cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
 
         current_trick = []
         for agent in ordered_agents:
@@ -233,21 +240,26 @@ class CrewEnv(Environment):
         if self.config['hints'] > 0:
             all_hints = []
             for agent in ordered_agents:
-                agent_hints = np.zeros(self.deck_shape()+4) # 3 for type of hint, 1 for hint unused
+                agent_hints = np.zeros(self.card_repr_shape()+4) # 3 for type of hint, 1 for hint unused
                 if self.remaining_hints[agent] > 0:
                     agent_hints[-1] = 1
                 elif agent in self.hinted_cards.keys():
                     hint_type, card = self.hinted_cards[agent]
                     agent_hints[:-4] = self.cardlist_to_vector([card])
-                    agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
+                    agent_hints[self.card_repr_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
+            cumulative_vector = np.concatenate([cumulative_vector, hints])
 
             # which player, relative to current (hinting) player, is leading the trick 
             # This is done so that the current leader is correctly related to the corresponding hand, tasks, etc in observation.
             leader_vec = np.zeros(self.config['players'])
             leader_vec[ordered_agents.index(self.agent_selector.selected_agent)] = 1
-            cumulative_vector = np.concatenate([cumulative_vector, hints, leader_vec])        
+            cumulative_vector = np.concatenate([cumulative_vector, leader_vec])        
+
+        is_commander = np.zeros(self.config['players'])
+        is_commander[ordered_agents.index("player_0")] = 1
+        cumulative_vector = np.concatenate([cumulative_vector, is_commander])
 
         return cumulative_vector
     
@@ -275,11 +287,14 @@ class CrewEnv(Environment):
 
         cumulative_vector = vectorized_hands
 
-        if not self.config['bidirectional_rep']:
-            discards = [self.playing_cards_bidict[card] for card in self.discards]
-            vectorized_discards = np.zeros(self.deck_shape())
-            vectorized_discards[discards] = 1
-            cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
+        if self.config['bidirectional_rep']:
+            vectorized_discards = np.zeros(self.config['rockets'])
+            for suit, rank in self.discards: # TODO: optimize by tracking discarded rockets
+                if suit == 'R':
+                    vectorized_discards[rank-1] = 1
+        else:
+            vectorized_discards = self.cardlist_to_vector(self.discards)
+        cumulative_vector = np.concatenate([cumulative_vector, vectorized_discards])
 
 
         current_trick = []
@@ -303,21 +318,27 @@ class CrewEnv(Environment):
         if self.config['hints'] > 0:
             all_hints = []
             for agent in ordered_agents:
-                agent_hints = np.zeros(self.deck_shape()+4) # 3 for type of hint, 1 for hint unused
+                agent_hints = np.zeros(self.card_repr_shape()+4) # 3 for type of hint, 1 for hint unused
                 if self.remaining_hints[agent] > 0:
                     agent_hints[-1] = 1
                 elif agent in self.hinted_cards.keys():
                     hint_type, card = self.hinted_cards[agent]
                     agent_hints[:-4] = self.cardlist_to_vector([card])
-                    agent_hints[self.deck_shape() + HINT_TYPE_DICT[hint_type]] = 1
+                    agent_hints[self.card_repr_shape() + HINT_TYPE_DICT[hint_type]] = 1
                 all_hints.append(agent_hints)
             hints = np.concatenate(all_hints)
+            cumulative_vector = np.concatenate([cumulative_vector, hints])
+
             # which player, relative to current (hinting) player, is leading the trick 
             # This is done so that the current leader is correctly related to the corresponding hand, tasks, etc in observation.
             leader_vec = np.zeros(self.config['players'])
             leader_vec[ordered_agents.index(self.agent_selector.selected_agent)] = 1
-            cumulative_vector = np.concatenate([cumulative_vector, hints, leader_vec])              
+            cumulative_vector = np.concatenate([cumulative_vector, leader_vec])              
   
+        is_commander = np.zeros(self.config['players'])
+        is_commander[ordered_agents.index("player_0")] = 1
+        cumulative_vector = np.concatenate([cumulative_vector, is_commander])
+
         return cumulative_vector
     
 
@@ -433,59 +454,85 @@ class CrewEnv(Environment):
     def deck_shape(self):
         return self.config["colors"] * self.config["ranks"] + self.config["rockets"]
 
-    def shared_observation_shape(self):
-        hands = self.config['players'] * self.deck_shape()
+    def card_repr_shape(self):
+        """shape of card representations"""
+        if self.config['bidirectional_rep']:
+            return self.config["colors"] * self.config["ranks"] * 2 + self.config["rockets"] 
+        else:
+            return self.deck_shape()
         
+    def shared_observation_shape(self):
+        total = 0
+
+        hands = self.config['players'] * self.card_repr_shape()
+        total += hands
         # additional 3 for hint type. Note that history of when hints were played is lost!
         if self.config['hints'] > 0:
-            hints = self.config['players'] * (self.deck_shape() + 4)
+            hints = self.config['players'] * (self.card_repr_shape() + 4)
             hints  += self.config['players'] # for trick leader
+            total += hints
+    
+        if self.config['bidirectional_rep']:
+            # only keep track of rockets as they don't use bidirectional rep
+            discards = self.config['rockets']
         else:
-            hints = 0
-        discards = self.deck_shape()
-
-        discards = self.deck_shape()
+            discards = self.card_repr_shape()
+        total += discards
 
         # NOTE: current_trick does NOT include order cards were played. 
-        current_trick = self.config['players'] * self.deck_shape()
-        tasks = self.config['players'] * self.deck_shape()
+        current_trick = self.config['players'] * self.card_repr_shape()
+        total += current_trick
 
+        tasks = self.config['players'] * self.card_repr_shape()
+        total += tasks
 
         trick_suit = len(self.suits)
+        total += trick_suit
 
+        is_commander = self.config['players']
+        total += is_commander
 
-        # no more discards, double all other card reps
-        # if self.config['bidirectional_rep']:
-        #     return 2 * hands + 2 * current_trick + 2 * tasks + 2 * hints + trick_suit
-        
-        return hands + discards + current_trick + tasks + hints + trick_suit
+        return total
 
     def observation_shape(self):
-        hand = self.deck_shape()
+        total = 0
+
+        hand = self.card_repr_shape()
+        total += hand
+
+        if self.config['bidirectional_rep']:
+            # only keep track of rockets as they don't use bidirectional rep
+            discards = self.config['rockets']
+        else:
+            discards = self.card_repr_shape()
+        total += discards
+
+
+        
+
+
+        # TODO: current_trick does NOT include order cards were played. 
+        current_trick = self.config['players'] * self.card_repr_shape()
+        total += current_trick
+
+        tasks = self.config['players'] * self.card_repr_shape()
+        total += tasks
+
+        trick_suit = len(self.suits)
+        total += trick_suit
         
         # additional 3 for hint type. Note that history of when hints were played is lost!
         if self.config['hints'] > 0:
-            hints = self.config['players'] * (self.deck_shape() + 4)
-            hints  += self.config['players'] # for trick leader
-        else:
-            hints = 0
-        discards = self.deck_shape()
+            hints = self.config['players'] * (self.card_repr_shape() + 4)
+            hints += self.config['players'] # for trick leader
+            total += hints
 
-        # TODO: current_trick does NOT include order cards were played. 
-        current_trick = self.config['players'] * self.deck_shape()
-        tasks = self.config['players'] * self.deck_shape()
 
-        trick_suit = len(self.suits)
+        is_commander = self.config['players']
+        total += is_commander
 
-        # no more discards, double all other card reps
-        # if self.config['bidirectional_rep']:
-        #     return 2 * hand + 2 * current_trick + 2 * tasks + 2 * hints + trick_suit
-        
-        #TODO: feature for commander. 
-        return hand + discards + current_trick + tasks + hints + trick_suit
+        return total
     
-
-    #TODO: Different action space for hinting and not (double the action space)
     def action_shape(self):
         if self.config['hints'] > 0:
             return 2 * self.deck_shape() + 1
@@ -561,7 +608,20 @@ class CrewEnv(Environment):
         Works with both normal and bidir rep.
         """
         if self.config['bidirectional_rep']:
-            raise NotImplementedError
+            vector = np.zeros(self.card_repr_shape())
+            for card in cards:
+                suit, rank = card
+                if suit != 'R':
+                    local_idx_low = self.card_to_bidir_reps_low_to_high[suit][rank-1]
+                    local_idx_high = self.card_to_bidir_reps_high_to_low[suit][rank-1]
+                    idx_low = local_idx_low + self.config['ranks'] * self.suits.index(suit)
+                    idx_high = local_idx_high + self.config['ranks'] * self.suits.index(suit) + self.config['ranks'] * self.config['colors']
+                    vector[idx_low] = 1
+                    vector[idx_high] = 1
+                else:
+                    local_idx = rank-1
+                    idx = local_idx + 2 * self.config['ranks'] * self.config['colors']
+                    vector[idx] = 1
         else:
             vector = np.zeros(self.deck_shape())
             for card in cards:
@@ -576,7 +636,6 @@ class CrewEnv(Environment):
         Used to ensure observations are consistent with relative player positions,
         not absolute player positions.
         """
-        # TODO: should probably store agent as index, not string 
         agent_ind = int(agent.split('_')[1])
         l = self.agents[:]
         return l[-agent_ind:] + l[:-agent_ind]

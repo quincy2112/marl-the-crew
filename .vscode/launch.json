@@ -2,6 +2,7 @@
     "version": "0.2.0",
     "configurations": [
 
+
       {
         "name": "train_hanabi_forward",
         "type": "python",
@@ -27,6 +28,38 @@
           "--hidden_size", "512",
           "--layer_N", "2",
           "--entropy_coef", "0.015"
+        ],
+        "cwd": "${workspaceFolder}"
+      },
+      {
+        "name": "test_train_crew_bidirectional_rockets",
+        "type": "python",
+        "request": "launch",
+        "program": "${workspaceFolder}/onpolicy/scripts/train/train_crew.py", // Replace with the actual path to your Python script
+        "args": [
+          "--env", "The_Crew",
+          "--crew", "TheCrew-small-rockets",
+          "--num_agents", "4",
+          "--num_hints", "1",
+          "--num_tasks", "1",
+          "--algo", "mappo",
+          "--exp", "check",
+          "--seed_max", "1",
+          "--ulimit", "22222",
+          "--n_training_threads", "1",
+          "--n_rollout_threads", "1",
+          "--num_mini_batch", "1",
+          "--episode_length", "100",
+          "--num_env_steps", "10000000000000",
+          "--ppo_epoch", "15",
+          "--gain", "0.01",
+          "--lr", "7e-4",
+          "--critic_lr", "1e-3",
+          "--hidden_size", "512",
+          "--layer_N", "2",
+          "--entropy_coef", "0.015",
+          "--use_bidirectional_rep",
+          "--use_wandb"
         ],
         "cwd": "${workspaceFolder}"
       },
