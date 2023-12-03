@@ -171,9 +171,11 @@ class CrewEnv(Environment):
             for agent in self.agents:
                 self.hands[agent].sort()
 
+            self.game_history = []
+
             #current agent to play next
             self.agent_selector.reset()
-            
+            self.reset_needed=False
 
             self.agent_selector_hint.reset()
 
@@ -347,6 +349,16 @@ class CrewEnv(Environment):
         """
         if self.log:
             self.render()
+        if action == -1:  # invalid action
+            obs = np.zeros(self.observation_shape)
+            share_obs = np.zeros(
+                self.shared_observation_shape
+            )
+            rewards = np.zeros((len(self.agents), 1))
+            done = False
+            infos = {}
+            available_actions = np.zeros(self.action_shape())
+            return obs, share_obs, rewards, done, infos, available_actions
         action = action[0]
         reward = 0
         done = False
@@ -416,6 +428,7 @@ class CrewEnv(Environment):
                             done = True
                             break
                 # print('trick won by ', trick_owner)
+                self.game_history.append((trick_owner, self.current_trick.copy()))
                 self.reinit_agents_order(trick_owner)
                 self.reinit_agents_order(trick_owner)
                 self.discards += list(self.current_trick.values())
@@ -429,19 +442,24 @@ class CrewEnv(Environment):
                 self.trick_suit = None
                 self.current_trick = {}
                 self.stage_hint_counter = 0
+        
+
+        if sum(len(hand) for hand in self.hands.values()) == 0 and not done:
+            pass
 
         # if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
         #     next_agent = self.agent_selector_hint.selected_agent
         # else:
         #     next_agent = self.agent_selector.selected_agent
 
+
+        # THE BELOW BREAKS WHEN GREATER THAN 1 ROLLOUT. WHY????????????
         if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
             next_agent = self.agent_selector_hint.selected_agent
             while self.remaining_hints[next_agent] == 0 and self.stage_hint_counter < len(self.agents):
                 self.agent_selector_hint.next()
                 next_agent = self.agent_selector_hint.selected_agent
                 self.stage_hint_counter += 1
-
         if self.config['hints'] == 0 or self.stage_hint_counter == len(self.agents):
             next_agent = self.agent_selector.selected_agent
 
@@ -451,6 +469,8 @@ class CrewEnv(Environment):
         infos = {'score': self.config['tasks'] -  len(self.tasks_owner.keys())}
         # print(infos)
         available_actions = self.get_legal_moves(next_agent)
+        if sum(available_actions) == 0:
+            self.reset_needed=True
         rewards = [[reward]] * self.config['players']
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
@@ -664,6 +684,8 @@ class CrewEnv(Environment):
             mask[self.card_repr_shape():] = self.get_hinting_mask(agent)
         else:
             mask[:self.card_repr_shape()] = self.get_action_mask(agent)
+        if sum(mask) == 0:
+            pass
         return mask
 
     def render(self):
@@ -707,7 +729,8 @@ class CrewEnv(Environment):
         elif self.suit_counters[agent][self.trick_suit] > 0:
             mask = self.cardlist_to_vector([card for card in self.hands[agent] if card[0] == self.trick_suit])
 
-
+        if sum(mask) == 0:
+            pass
         return mask
     
     def get_hinting_mask(self, agent):
@@ -737,6 +760,8 @@ class CrewEnv(Environment):
                 mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
                 indices = self.cardlist_to_vector([min(cards, key=lambda card: card[1])])
                 mask[:-1] = np.logical_or(mask[:-1], indices).astype(int)
+        if sum(mask) == 0:
+            pass
         return mask
 
     def identify_hint_type(self, agent, card):
@@ -780,10 +805,14 @@ class CrewEnv(Environment):
         if self.config['bidirectional_rep']:
             low_to_high, high_to_low = self.get_bidir_bidicts()
             if index < self.config['ranks'] * self.config['colors']:
+                if index < 0:
+                    pass
                 return low_to_high.inverse[index]
             elif index < 2 * self.config['ranks'] * self.config['colors']:
                 return high_to_low.inverse[index]
             else:
                 return ('R', int(index - 2 * self.config['ranks'] * self.config['colors'] + 1))
         else:
+            if index < 0:
+                pass
             return self.playing_cards_bidict.inverse[index]
