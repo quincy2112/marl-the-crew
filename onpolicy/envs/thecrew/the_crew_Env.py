@@ -349,16 +349,16 @@ class CrewEnv(Environment):
         """
         if self.log:
             self.render()
-        if action == -1:  # invalid action
-            obs = np.zeros(self.observation_shape)
-            share_obs = np.zeros(
-                self.shared_observation_shape
-            )
-            rewards = np.zeros((len(self.agents), 1))
-            done = False
-            infos = {}
-            available_actions = np.zeros(self.action_shape())
-            return obs, share_obs, rewards, done, infos, available_actions
+        # if action == -1:  # invalid action
+        #     obs = np.zeros(self.observation_shape)
+        #     share_obs = np.zeros(
+        #         self.shared_observation_shape
+        #     )
+        #     rewards = np.zeros((len(self.agents), 1))
+        #     done = False
+        #     infos = {}
+        #     available_actions = np.zeros(self.action_shape())
+        #     return obs, share_obs, rewards, done, infos, available_actions
         action = action[0]
         reward = 0
         done = False
@@ -447,21 +447,21 @@ class CrewEnv(Environment):
         if sum(len(hand) for hand in self.hands.values()) == 0 and not done:
             pass
 
-        # if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
-        #     next_agent = self.agent_selector_hint.selected_agent
-        # else:
-        #     next_agent = self.agent_selector.selected_agent
+        if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
+            next_agent = self.agent_selector_hint.selected_agent
+        else:
+            next_agent = self.agent_selector.selected_agent
 
 
         # THE BELOW BREAKS WHEN GREATER THAN 1 ROLLOUT. WHY????????????
-        if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
-            next_agent = self.agent_selector_hint.selected_agent
-            while self.remaining_hints[next_agent] == 0 and self.stage_hint_counter < len(self.agents):
-                self.agent_selector_hint.next()
-                next_agent = self.agent_selector_hint.selected_agent
-                self.stage_hint_counter += 1
-        if self.config['hints'] == 0 or self.stage_hint_counter == len(self.agents):
-            next_agent = self.agent_selector.selected_agent
+        # if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
+        #     next_agent = self.agent_selector_hint.selected_agent
+        #     while self.remaining_hints[next_agent] == 0 and self.stage_hint_counter < len(self.agents):
+        #         self.agent_selector_hint.next()
+        #         next_agent = self.agent_selector_hint.selected_agent
+        #         self.stage_hint_counter += 1
+        # if self.config['hints'] == 0 or self.stage_hint_counter == len(self.agents):
+        #     next_agent = self.agent_selector.selected_agent
 
 
         obs = self.get_observation(next_agent)
