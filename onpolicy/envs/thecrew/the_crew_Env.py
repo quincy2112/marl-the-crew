@@ -10,6 +10,8 @@ from pettingzoo.utils import agent_selector
 
 # TODO: train with multiple configurations.
 
+# TODO: feature for player known to be out of suit
+
 REWARD_MAP = {
     "task_complete": 1,
     "win": 10,
@@ -193,13 +195,17 @@ class CrewEnv(Environment):
             obs = self.get_observation(self.agent_selector.selected_agent)
             share_obs = self.get_shared_observation()
             available_actions = self.get_legal_moves(self.agent_selector.selected_agent)
+            if self.log == 1:
+                print('New game started')
+                print('Tasks: ', self.tasks)
+                print('Hands: ', self.hands)
         else:
             obs = np.zeros(self.observation_shape)
             share_obs = np.zeros(
                 self.shared_observation_shape
             )
             available_actions = np.zeros(self.action_shape())
-    
+
         return obs, share_obs, available_actions
     
 
@@ -347,7 +353,7 @@ class CrewEnv(Environment):
         """
         Action is a list of length 1, containing the index of the action. With hints, the index could correspond to a hinting action or a playing action.
         """
-        if self.log:
+        if self.log ==2 :
             self.render()
         # if action == -1:  # invalid action
         #     obs = np.zeros(self.observation_shape)
@@ -376,6 +382,11 @@ class CrewEnv(Environment):
                 self.remaining_hints[player] -= 1
 
             self.stage_hint_counter += 1
+            if self.log == 1:
+                if card_index == self.card_repr_shape():
+                    print('No hint given by ', player)
+                else:
+                    print('Hint given by ', player, ' to ', card, ' of type ', hint_type)
             self.agent_selector_hint.next()
 
         # play action
@@ -390,6 +401,8 @@ class CrewEnv(Environment):
                 self.trick_suit = card[0]
             self.current_trick[player]= card
             self.suit_counters[player][card[0]] -= 1
+            if self.log == 1:
+                print(player, ' played ', card)
             self.agent_selector.next()
 
             # check if trick is over
@@ -406,7 +419,8 @@ class CrewEnv(Environment):
                         trick_suit = "R"
                         trick_value = card_value
                         trick_owner = card_player
-
+                if self.log == 1:
+                    print('trick won by ', trick_owner)
                 # check if any task is completed
                 for _, card in cur_trick_list:
                     if card in self.tasks_owner.keys():
@@ -475,8 +489,8 @@ class CrewEnv(Environment):
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
-        if done and self.log:
-            print('GAME OVER. Tasks remaining: ', self.config['tasks'] -  len(self.tasks_owner.keys()), '\n\n\n\n\n\n\n\n\n\n\n')
+        if done and self.log > 0:
+            print('GAME OVER. Tasks remaining: ', self.config['tasks'], '\n\n\n\n\n\n\n\n\n\n\n')
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
