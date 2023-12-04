@@ -408,13 +408,13 @@ class CrewRunner(Runner):
             )
 
     @torch.no_grad()
-    def eval_100k(self, eval_games=100000):
+    def eval_100k(self, eval_games=100):
         eval_envs = self.eval_envs
         trials = int(eval_games / self.n_eval_rollout_threads)
 
         eval_scores = []
         for trial in range(trials):
-            print("trail is {}".format(trial))
+            #print("trail is {}".format(trial))
             eval_finish = False
             eval_reset_choose = np.ones(self.n_eval_rollout_threads) == 1.0
 

@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+    
 
 
       {
@@ -187,6 +188,42 @@
           "--layer_N", "2",
           "--entropy_coef", "0.015",
           "--use_wandb"
+        ],
+        "cwd": "${workspaceFolder}"
+      },
+      
+      {
+        "name": "test_eval",
+        "type": "python",
+        "request": "launch",
+        "justMyCode": false,
+        "program": "${workspaceFolder}/onpolicy/scripts/eval/eval_crew.py", // Replace with the actual path to your Python script
+        "args": [
+          "--env", "The_Crew",
+          "--crew", "TheCrew-small-no_rocket",
+          "--num_agents", "4",
+          "--num_hints", "1",
+          "--num_tasks", "1",
+          "--use_eval",
+          "--algo", "mappo",
+          "--exp", "check",
+          "--model_dir", "/home/haoming/extreme_driving/Adeesh/MLGT/marl-the-crew/onpolicy/scripts/results/The_Crew/TheCrew-small-no_rocket/mappo/check/wandb/run-20231203_195852-3sjhfzbd/files",
+          "--seed_max", "1",
+          "--ulimit", "22222",
+          "--n_training_threads", "1",
+          "--n_rollout_threads", "2",
+          "--num_mini_batch", "1",
+          "--episode_length", "100",
+          "--num_env_steps", "10000000000000",
+          "--ppo_epoch", "15",
+          "--gain", "0.01",
+          "--lr", "7e-4",
+          "--critic_lr", "1e-3",
+          "--hidden_size", "512",
+          "--layer_N", "2",
+          "--entropy_coef", "0.015",
+          "--use_wandb",
+          "--log"
         ],
         "cwd": "${workspaceFolder}"
       },

@@ -162,7 +162,7 @@ def get_config():
         "--algorithm_name",
         type=str,
         default="mappo",
-        choices=["rmappo", "mappo", "happo", "hatrpo", "mat", "mat_dec"],
+        choices=["rmappo", "mappo", "happo", "hatrpo", "mat", "mat_dec", "ippo", "trpo"],
     )
 
     parser.add_argument(
