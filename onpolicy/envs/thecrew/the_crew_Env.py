@@ -93,12 +93,21 @@ class CrewEnv(Environment):
                 "rockets": 0,
                 "seed": self._seed,
             }
+        elif args.crew_name == "TheCrew-small-rigged":
+            config = {
+                "colors": 4,
+                "ranks": 4,
+                "players": args.num_agents,
+                "rockets": 0,
+                "seed": self._seed,
+                "rigged": True
+            }
         elif args.crew_name == "TheCrew-small-rockets":
             config = {
                 "colors": 4,
                 "ranks": 4,
                 "players": args.num_agents,
-                "rockets": 2,
+                "rockets": 4,
                 "seed": self._seed,
             }
         elif args.crew_name == "TheCrew-standard":
@@ -112,6 +121,8 @@ class CrewEnv(Environment):
         else:
             raise ValueError("Unknown environment name: " + args.crew_name)
         self.log = args.log
+        self.rigged = config.get('rigged', False)
+        self.perfect_information = args.perfect_info
         config['hints'] = args.num_hints 
         config['tasks'] = args.num_tasks
         config['unified_action_space'] = args.unified_action_space
@@ -170,6 +181,9 @@ class CrewEnv(Environment):
                         self.reinit_agents_order(agent)
                         break
             self.deal_task_cards()
+
+
+
             for agent in self.agents:
                 self.hands[agent].sort()
 
@@ -212,6 +226,9 @@ class CrewEnv(Environment):
 
     def get_observation(self, agent):
         
+        if self.perfect_information:
+            return self.get_shared_observation()
+
         # orders based on current agent, meaning agent_to_hint or agent_to_play
         ordered_agents = self.ordered_obs_players(agent)
         
@@ -249,7 +266,7 @@ class CrewEnv(Environment):
             for agent in ordered_agents:
                 agent_hints = np.zeros(self.card_repr_shape()+4) # 3 for type of hint, 1 for hint unused
                 if self.remaining_hints[agent] > 0:
-                    agent_hints[-1] = 1
+                    agent_hints[-1] = 1 # TODO: reverse this. 0 if used, 1 if not
                 elif agent in self.hinted_cards.keys():
                     hint_type, card = self.hinted_cards[agent]
                     agent_hints[:-4] = self.cardlist_to_vector([card])
@@ -353,6 +370,7 @@ class CrewEnv(Environment):
         """
         Action is a list of length 1, containing the index of the action. With hints, the index could correspond to a hinting action or a playing action.
         """
+        
         if self.log ==2 :
             self.render()
         # if action == -1:  # invalid action
@@ -490,7 +508,7 @@ class CrewEnv(Environment):
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
         if done and self.log > 0:
-            print('GAME OVER. Tasks remaining: ', self.config['tasks'], '\n\n\n\n\n\n\n\n\n\n\n')
+            print('GAME OVER. Tasks remaining: ', len(self.tasks), '\n\n\n\n\n\n\n\n\n\n\n')
         return obs, share_obs, rewards, done, infos, available_actions
 
     def deck_shape(self):
@@ -537,6 +555,8 @@ class CrewEnv(Environment):
         return total
 
     def get_observation_shape(self):
+        if self.perfect_information:
+            return self.get_shared_observation_shape()
         total = 0
 
         hand = self.card_repr_shape()
@@ -613,10 +633,46 @@ class CrewEnv(Environment):
     # since player 0 is guaranteed to be commander, this ensures that the commander is always dealt the first task
     def deal_task_cards(self):
         to_deal = random.sample(self.task_cards, self.config["tasks"])     
-        for _ in range(len(to_deal)):
-            agent = self.agent_selector.next()
-            self.tasks[agent].append(task := to_deal.pop())
-            self.tasks_owner[task] = agent
+        
+        # if rigged, no task cards of rank 4
+        while self.rigged and to_deal[0][1] == 4:
+            to_deal = random.sample(self.task_cards, self.config["tasks"])
+
+        # give task to whoever has the 4 of task suit
+        if self.rigged:
+            for agent in self.agents:
+                if (to_deal[0][0], 4) in self.hands[agent]:
+                    self.tasks[agent].append(task := to_deal.pop(0))
+                    self.tasks_owner[task] = agent
+                    break
+            
+            # if agent has 4, trade the task card to another agent
+            if task in self.hands[agent]:
+                # choose agent other than agent
+                other_agent = random.choice([a for a in self.agents if a != agent])
+                # choose random card from other_agent's hand
+                other_card = random.choice(self.hands[other_agent])
+                # remove other_card from other_agent's hand
+                self.hands[other_agent].remove(other_card)
+                # add other_card to agent's hand
+                self.hands[agent].append(other_card)
+                # add task to other_agent's hand
+                self.hands[other_agent].append(task)
+                # remove task from agent's hand
+                self.hands[agent].remove(task)
+                # update suit counters
+                self.suit_counters[agent][task[0]] -= 1
+                self.suit_counters[other_agent][task[0]] += 1
+                self.suit_counters[agent][other_card[0]] += 1
+                self.suit_counters[other_agent][other_card[0]] -= 1
+
+        else:
+            agent = self.agent_selector.selected_agent
+            for _ in range(len(to_deal)):
+                self.tasks[agent].append(task := to_deal.pop())
+                self.tasks_owner[task] = agent
+                agent = self.agent_selector.next()
+            self.agent_selector.reinit(self.agents)
 
 
     def generateAllCards(self):
@@ -742,7 +798,8 @@ class CrewEnv(Environment):
         # condition 1
         elif self.suit_counters[agent][self.trick_suit] > 0:
             mask = self.cardlist_to_vector([card for card in self.hands[agent] if card[0] == self.trick_suit])
-
+        else:
+            print(self.hands, self.trick_suit, self.suit_counters)
         if sum(mask) == 0:
             pass
         return mask
