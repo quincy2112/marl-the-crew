@@ -77,6 +77,9 @@ def parse_args(args, parser):
     parser.add_argument('--unified_action_space', action= "store_true", default=False, help="Whether to use a unified action space for hints and plays. Default: False")
     parser.add_argument('--use_bidirectional_rep', action= "store_true", default=False, help="Whether to use a bidirectional representation. Default: False")
     parser.add_argument('--perfect_info', action= "store_true", default=False, help="Whether the hands are public (perfect information). Default: False")
+    parser.add_argument('--use_trick_win_rewards', action= "store_true", default=False, help="Whether to use rewards for winning non-task tricks. Default: False")
+    parser.add_argument('--use_card_value_rewards', action= "store_true", default=False, help="Whether to use rewards based on card value played. Default: False")
+    
     all_args = parser.parse_known_args(args)[0]
 
     return all_args

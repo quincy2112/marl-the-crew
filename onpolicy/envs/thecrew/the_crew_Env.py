@@ -31,6 +31,20 @@ HINT_TYPE_DICT = {
     'only': 2,
 }
 
+TRICK_WIN_REWARD_MAP = { # task holder should have control over trick
+    "task_holder": 0.5,
+    "task_not_holder": -0.5,
+}
+
+
+# multiply reward by card value. Task holder wants high cards, others don't
+# double these rewards if task suit
+# these rewards NOT used if task played
+CARD_VALUE_REWARD_MAP = {
+    "task_holder": -0.05, 
+    "task_not_holder": 0.05,
+}
+
 class Environment(object):
     """Abstract Environment interface.
 
@@ -127,6 +141,8 @@ class CrewEnv(Environment):
         config['tasks'] = args.num_tasks
         config['unified_action_space'] = args.unified_action_space
         config['bidirectional_rep'] = args.use_bidirectional_rep
+        config['use_trick_win_rewards'] = args.use_trick_win_rewards
+        config['use_card_value_rewards'] = args.use_card_value_rewards
         self.config = config
         self.playing_cards, self.task_cards = self.generateAllCards()
         self.possible_agents: list[str] = [f"player_{i}" for i in range(self.config['players'])]
@@ -384,8 +400,8 @@ class CrewEnv(Environment):
         #     available_actions = np.zeros(self.action_shape())
         #     return obs, share_obs, rewards, done, infos, available_actions
         action = action[0]
-        reward = 0
         done = False
+        rewards = [[0]] * self.config['players']
 
         # hint action
         if self.config['hints'] > 0 and self.stage_hint_counter < len(self.agents):
@@ -422,7 +438,6 @@ class CrewEnv(Environment):
             if self.log == 1:
                 print(player, ' played ', card)
             self.agent_selector.next()
-
             # check if trick is over
             if len(self.current_trick.keys()) == len(self.agents):
                 trick_suit = self.trick_suit
@@ -440,6 +455,7 @@ class CrewEnv(Environment):
                 if self.log == 1:
                     print('trick won by ', trick_owner)
                 # check if any task is completed
+                any_task_completed = False
                 for _, card in cur_trick_list:
                     if card in self.tasks_owner.keys():
                         task_owner = self.tasks_owner[card]
@@ -448,17 +464,43 @@ class CrewEnv(Environment):
                             self.tasks[task_owner].remove(card)
                             self.tasks[task_owner].sort()
                             self.tasks_owner.pop(card)
+                            for reward in rewards:
+                                reward[0] += REWARD_MAP["task_complete"]
+                            any_task_completed = True
 
                             # Terminate if all tasks are completed
                             if len(self.tasks_owner.keys()) == 0:
-                                reward += REWARD_MAP["win"]
+                                for reward in rewards:
+                                    reward[0] += REWARD_MAP["win"]
                                 done = True
                                 break
                         else:
                             # Terminate if task_owner != trick_owner
-                            reward += REWARD_MAP["lose"] - REWARD_MAP['task_complete'] * (self.config['tasks'] -  len(self.tasks_owner.keys()))
+                            for reward in rewards:
+                                reward[0] += REWARD_MAP["lose"] - REWARD_MAP['task_complete'] * (self.config['tasks'] -  len(self.tasks_owner.keys()))
                             done = True
                             break
+                
+                
+                if not any_task_completed:
+                    if self.config['use_trick_win_rewards']: # trick win rewards shared
+                        for reward in rewards:
+                            if trick_owner == list(self.tasks_owner.values())[0]:
+                                reward[0] += TRICK_WIN_REWARD_MAP['task_holder']
+                            else:
+                                reward[0] += TRICK_WIN_REWARD_MAP['task_not_holder']
+                    if self.config['use_card_value_rewards']:
+                        for reward, (card_player, card) in zip(rewards, cur_trick_list):
+                            task_suits = [card[0] for card in self.tasks[card_player]]
+                            if card[0] in task_suits:
+                                multiplier = 2
+                            else:
+                                multiplier = 1
+                            if card_player == list(self.tasks_owner.values())[0]:
+                                reward[0] += CARD_VALUE_REWARD_MAP['task_holder'] * card[1] * multiplier
+                            else:
+                                reward[0] += CARD_VALUE_REWARD_MAP['task_not_holder'] * card[1] * multiplier
+
                 # print('trick won by ', trick_owner)
                 self.game_history.append((trick_owner, self.current_trick.copy()))
                 self.reinit_agents_order(trick_owner)
@@ -503,7 +545,6 @@ class CrewEnv(Environment):
         available_actions = self.get_legal_moves(next_agent)
         if sum(available_actions) == 0:
             self.reset_needed=True
-        rewards = [[reward]] * self.config['players']
         
         # reset hinting stage. So next actions will be hints. NOTE: which player starts off hinting is just based on previous stage. Arbitrary but should be as good as anything?
         # TODO: implement different hinting timings
@@ -672,7 +713,7 @@ class CrewEnv(Environment):
                 self.tasks[agent].append(task := to_deal.pop())
                 self.tasks_owner[task] = agent
                 agent = self.agent_selector.next()
-            self.agent_selector.reinit(self.agents)
+            self.reinit_agents_order(self.agents[0])
 
 
     def generateAllCards(self):
@@ -887,3 +928,4 @@ class CrewEnv(Environment):
             if index < 0:
                 pass
             return self.playing_cards_bidict.inverse[index]
+        
