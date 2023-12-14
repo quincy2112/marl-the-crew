@@ -74,6 +74,7 @@ def parse_args(args, parser):
     parser.add_argument('--run_name', type=str, default="", help="name of run for wandb")
     parser.add_argument('--unified_action_space', action= "store_true", default=False, help="Whether to use a unified action space for hints and plays. Default: False")
     parser.add_argument('--use_bidirectional_rep', action= "store_true", default=False, help="Whether to use a bidirectional representation. Default: False")
+    parser.add_argument('--perfect_info', action= "store_true", default=False, help="Whether the hands are public (perfect information). Default: False")
     parser.add_argument('--game_log_dir', type=str, default="", help="path to game log directory")
     all_args = parser.parse_known_args(args)[0]
 
